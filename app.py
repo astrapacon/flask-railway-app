@@ -21,14 +21,14 @@ API_PASSWORD = os.getenv("API_PASSWORD", "admin")
 TOKEN_TTL_SECONDS = int(os.getenv("TOKEN_TTL_SECONDS", "86400"))  # 24h
 
 # Nomes de colunas esperadas (usamos constantes para evitar typos)
-COL_ANO_NASC = "Ano Nascimento"
-COL_UF = "Uf Cliente"
-COL_CIDADE = "Cidade"
-COL_DATA_VENDA = "Cotas Id Cliente → Data Venda"
-COL_VALOR = "Cotas Id Cliente → Valor Credito Venda"
-COL_ID_COTA = "Cotas Id Cliente → Id Cota"
-COL_TEM_PAGTO = "Cotas Id Cliente → Tem Pagamento"
-COL_SEGMENTO = "Cotas Id Cliente → Segmento"
+COL_ANO_NASC = "ano_nascimento"
+COL_UF = "uf_cliente"
+COL_CIDADE = "cidade"
+COL_DATA_VENDA = "data_producao"
+COL_VALOR = "valor_credito_venda"
+COL_ID_COTA = "id_cota"
+COL_TEM_PAGTO = "tem_pagamento"
+COL_SEGMENTO = "segmento_bacen"
 
 # -------------------------
 # Utilidades gerais
