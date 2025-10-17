@@ -1,4 +1,9 @@
+pip>=24.2
+setuptools>=73.0.0
+wheel>=0.44.0
+
 Flask==3.0.3
 pandas==2.2.2
+numpy==2.0.2
 python-dateutil==2.9.0.post0
 gunicorn==21.2.0
