@@ -12,7 +12,11 @@ app = Flask(__name__)
 # =========================
 # Configurações/Constantes
 # =========================
-PERIOD_START = pd.Timestamp("2025-02-01", tz="UTC")  # desde fevereiro/2025
+# Agora inclui janeiro por padrão; pode sobrescrever via ENV: PERIOD_START=YYYY-MM-DD
+PERIOD_START = pd.Timestamp(os.getenv("PERIOD_START", "2025-01-01"), tz="UTC")
+
+# Dedup por id_cota opcional (0/1). Default 1 = dedup (IDs distintos).
+DEFAULT_DEDUP = int(os.getenv("DEDUP_BY_ID", "1"))
 
 # ENV para autenticação
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-prod")
@@ -72,6 +76,17 @@ def _jround(x, nd=2):
     except Exception:
         return None
 
+def _is_paid(v) -> bool:
+    """Normaliza valores de pagamento: aceita Sim, S, True, 1, Pago, etc."""
+    if isinstance(v, (bool, int, float)):
+        try:
+            return bool(int(v))
+        except Exception:
+            return bool(v)
+    s = str(v).strip().lower()
+    s = s.replace('não', 'nao')
+    return s in {"sim", "s", "pago", "paga", "true", "1", "yes", "y"}
+
 # -------------------------
 # Autenticação
 # -------------------------
@@ -108,35 +123,60 @@ def require_auth(fn):
 # -------------------------
 # Cálculo principal
 # -------------------------
-def calcular_metricas(df: pd.DataFrame) -> dict:
+def calcular_metricas(df: pd.DataFrame, *, dedup: int | None = None) -> dict:
     df = _normalize_columns(df)
-    _ensure_columns(df, [COL_DATA_VENDA, COL_VALOR, COL_ID_COTA, COL_TEM_PAGTO, COL_UF])
+
+    # ---- Mapear possíveis nomes do ID da cota para 'id_cota'
+    renomes_id = {
+        "id_cota": "id_cota",
+        "ID Cota": "id_cota",
+        "Id Cota": "id_cota",
+        "Cota → ID": "id_cota",
+        "Cotas → ID Cota": "id_cota",
+        "Cotas - ID Cliente → ID Cota": "id_cota",
+        "ID da Cota": "id_cota",
+        "id": "id_cota",
+        "cota_id": "id_cota",
+    }
+    for k, v in renomes_id.items():
+        if k in df.columns and k != v:
+            df = df.rename(columns={k: v})
+
+    # Agora garantimos colunas obrigatórias
+    _ensure_columns(df, [COL_DATA_VENDA, COL_VALOR, COL_TEM_PAGTO, COL_UF, COL_ID_COTA])
 
     # Tipos
     df = df.copy()
     df[COL_DATA_VENDA] = pd.to_datetime(df[COL_DATA_VENDA], utc=True, errors="coerce")
     df[COL_VALOR] = pd.to_numeric(df[COL_VALOR], errors="coerce")
+    # Normaliza id_cota como string (preserva zeros à esquerda)
+    df[COL_ID_COTA] = df[COL_ID_COTA].astype(str).str.strip()
 
-    # Filtra período YTD (desde 2025-02-01)
-    df = df[df[COL_DATA_VENDA] >= PERIOD_START]
+    # Filtro de período
+    df = df[df[COL_DATA_VENDA] >= PERIOD_START].copy()
 
-    # Dedup por Id Cota (cada cota conta uma vez) — mantém a linha mais recente pela Data de Venda
-    df = df.sort_values(COL_DATA_VENDA).drop_duplicates(subset=[COL_ID_COTA], keep="last")
+    # Dedup por Id Cota (opcional, default usa DEFAULT_DEDUP)
+    if dedup is None:
+        dedup = DEFAULT_DEDUP
+    if dedup == 1:
+        # mantém a linha mais recente por cota
+        df = df.sort_values(COL_DATA_VENDA).drop_duplicates(subset=[COL_ID_COTA], keep="last")
 
-    # Coluna de mês (YYYY-MM)
+    # Colunas de período
     df["mes"] = df[COL_DATA_VENDA].dt.to_period("M").astype(str)
+    mes_ref_atual = pd.Timestamp.now(tz="America/Sao_Paulo").strftime("%Y-%m")
 
     # -------- VENDAS (tudo) --------
     vendas = df.groupby("mes").agg({
         COL_VALOR: "sum",
-        COL_ID_COTA: "nunique"
+        COL_ID_COTA: ("nunique" if dedup == 1 else "count")
     }).rename(columns={COL_VALOR: "Venda_RS", COL_ID_COTA: "Venda_Qtde"})
 
     # -------- PRODUÇÃO (pagas) --------
-    pagas = df[df[COL_TEM_PAGTO].astype(str).str.strip().str.lower() == "sim"]
+    pagas = df[df[COL_TEM_PAGTO].apply(_is_paid)].copy()
     producao = pagas.groupby("mes").agg({
         COL_VALOR: "sum",
-        COL_ID_COTA: "nunique"
+        COL_ID_COTA: ("nunique" if dedup == 1 else "count")
     }).rename(columns={COL_VALOR: "Prod_RS", COL_ID_COTA: "Prod_Qtde"})
 
     # Junta e calcula métricas mensais
@@ -148,24 +188,42 @@ def calcular_metricas(df: pd.DataFrame) -> dict:
     resultado["Prod_RS_M"] = resultado["Prod_RS"].map(_to_millions)
 
     # YTD (agregado do período)
-    venda_total_qtde = int(df[COL_ID_COTA].nunique())
+    if dedup == 1:
+        venda_total_qtde = int(df[COL_ID_COTA].nunique())
+        prod_total_qtde  = int(pagas[COL_ID_COTA].nunique())
+    else:
+        venda_total_qtde = int(len(df))
+        prod_total_qtde  = int(len(pagas))
+
     venda_total_rs = float(df[COL_VALOR].sum(skipna=True))
-    prod_total_qtde = int(pagas[COL_ID_COTA].nunique())
     prod_total_rs = float(pagas[COL_VALOR].sum(skipna=True))
     conv_anual_qtde = _safe_div(prod_total_qtde, venda_total_qtde)
     conv_anual_rs = _safe_div(prod_total_rs, venda_total_rs)
 
-    # Cotas pagas por UF
+    # Cotas pagas por UF (total)
     por_uf = pagas.groupby(COL_UF).agg({
-        COL_ID_COTA: "nunique",
+        COL_ID_COTA: ("nunique" if dedup == 1 else "count"),
         COL_VALOR: "sum"
     }).rename(columns={COL_ID_COTA: "Cotas_Pagas_Qtde", COL_VALOR: "Cotas_Pagas_RS"})
     por_uf["Cotas_Pagas_RS_M"] = por_uf["Cotas_Pagas_RS"].map(_to_millions)
 
+    # Cotas pagas por UF (mês corrente)
+    por_uf_mes = (
+        pagas[pagas["mes"] == mes_ref_atual]
+        .groupby(COL_UF)
+        .agg({
+            COL_ID_COTA: ("nunique" if dedup == 1 else "count"),
+            COL_VALOR: "sum"
+        })
+        .rename(columns={COL_ID_COTA: "Cotas_Pagas_Qtde", COL_VALOR: "Cotas_Pagas_RS"})
+        .reset_index()
+        .sort_values("Cotas_Pagas_Qtde", ascending=False)
+    )
+
     # 🔥 Cotas pagas por SEGMENTO e MÊS (se existir a coluna de segmento)
     if COL_SEGMENTO in df.columns:
         seg_mes = pagas.groupby(["mes", COL_SEGMENTO]).agg({
-            COL_ID_COTA: "nunique",
+            COL_ID_COTA: ("nunique" if dedup == 1 else "count"),
             COL_VALOR: "sum"
         }).rename(columns={COL_ID_COTA: "Qtde", COL_VALOR: "RS"}).reset_index()
         seg_mes["RS_M"] = seg_mes["RS"].map(_to_millions)
@@ -209,9 +267,32 @@ def calcular_metricas(df: pd.DataFrame) -> dict:
                 "cotas_pagas_rs_m": _jround(row["Cotas_Pagas_RS_M"], 6),
             })
 
+    uf_mes_list = [
+        {
+            "uf": r[COL_UF],
+            "cotas_pagas_qtde": int(r["Cotas_Pagas_Qtde"]),
+            "cotas_pagas_rs": _jround(r["Cotas_Pagas_RS"], 2),
+        }
+        for _, r in por_uf_mes.iterrows()
+    ] if not por_uf_mes.empty else []
+
+    # Auditoria / Debug
+    debug = {
+        "period_start_utc": PERIOD_START.isoformat(),
+        "dedup_by_id": bool(dedup),
+        "rows_after_period": int(len(df)),
+        "rows_paid": int(len(pagas)),
+        "ids_pagos_distintos": int(pagas[COL_ID_COTA].nunique()),
+        "months_covered": sorted(df["mes"].unique().tolist())
+    }
+
     out = {
         "status": "ok",
         "period_start_utc": PERIOD_START.isoformat(),
+        # --- Totais pedidos (qtde) ---
+        "total_cotas_vendidas": venda_total_qtde,
+        "total_cotas_pagas": prod_total_qtde,
+        # --- YTD em R$ e conversões ---
         "ytd": {
             "venda_rs": _jround(venda_total_rs, 2),
             "venda_qtde": venda_total_qtde,
@@ -224,7 +305,12 @@ def calcular_metricas(df: pd.DataFrame) -> dict:
         },
         "monthly": monthly,
         "cotas_pagas_por_uf": uf_list,
-        "cotas_pagas_por_segmento_mes": pagas_por_segmento_mes
+        "cotas_pagas_por_uf_mes_corrente": {
+            "mes": mes_ref_atual,
+            "dados": uf_mes_list
+        },
+        "cotas_pagas_por_segmento_mes": pagas_por_segmento_mes,
+        "debug": debug
     }
 
     return out
@@ -239,11 +325,14 @@ def _to_compact_output(resultado_dict: dict) -> dict:
     - cotas_pagas_por_uf: uf, cotas_pagas_qtde, cotas_pagas_rs
     - cotas_pagas_por_segmento_mes: mes, segmento, qtde, rs
     - mantém ytd
+    - inclui 'total_cotas_*' e 'cotas_pagas_por_uf_mes_corrente'
     """
     out = {
         "status": resultado_dict.get("status", "ok"),
         "rows_received": resultado_dict.get("rows_received"),
         "period_start_utc": resultado_dict.get("period_start_utc"),
+        "total_cotas_vendidas": resultado_dict.get("total_cotas_vendidas"),
+        "total_cotas_pagas": resultado_dict.get("total_cotas_pagas"),
         "ytd": resultado_dict.get("ytd", {})
     }
 
@@ -259,7 +348,7 @@ def _to_compact_output(resultado_dict: dict) -> dict:
             "ticket_medio": _jround(row.get("ticket_medio"), 2),
         })
 
-    # UF
+    # UF (total)
     ufs = resultado_dict.get("cotas_pagas_por_uf", [])
     out["cotas_pagas_por_uf"] = [
         {
@@ -269,7 +358,21 @@ def _to_compact_output(resultado_dict: dict) -> dict:
         } for u in ufs
     ]
 
-    # Segmento x Mês
+    # UF (mês corrente)
+    uf_mes = resultado_dict.get("cotas_pagas_por_uf_mes_corrente", {})
+    out["cotas_pagas_por_uf_mes_corrente"] = {
+        "mes": uf_mes.get("mes"),
+        "dados": [
+            {
+                "uf": d.get("uf"),
+                "cotas_pagas_qtde": int(d.get("cotas_pagas_qtde", 0)),
+                "cotas_pagas_rs": _jround(d.get("cotas_pagas_rs"), 2)
+            }
+            for d in uf_mes.get("dados", [])
+        ]
+    }
+
+    # Segmento x Mês (pagas)
     seg = resultado_dict.get("cotas_pagas_por_segmento_mes", [])
     out["cotas_pagas_por_segmento_mes"] = [
         {
@@ -311,6 +414,7 @@ def receber_workato():
     Retorna JSON com métricas mensais e YTD.
     - Compacto por padrão
     - Completo com ?format=full
+    - Dedup por id_cota controlável com ?dedup=0|1 (default via ENV DEDUP_BY_ID)
     """
     try:
         payload = request.get_json(silent=True)
@@ -333,8 +437,12 @@ def receber_workato():
         df = pd.DataFrame(data)
         rows_received = len(df)
 
+        # Dedup param
+        dedup_qs = request.args.get("dedup")
+        dedup = int(dedup_qs) if dedup_qs in {"0", "1"} else None
+
         # Calcula métricas
-        resultado = calcular_metricas(df)
+        resultado = calcular_metricas(df, dedup=dedup)
 
         # Opcional: salvar um CSV no disco para auditoria (defina SAVE_CSV=true)
         if os.getenv("SAVE_CSV", "false").lower() == "true":
