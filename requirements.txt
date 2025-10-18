@@ -1,6 +1,7 @@
-flask>=3.0.0
-itsdangerous>=2.1.2
-pandas>=2.2.0
-gunicorn>=21.2.0
-python-dateutil>=2.9.0
-pytz>=2024.1
+Flask==3.0.3
+itsdangerous==2.2.0
+pandas==2.2.2
+requests==2.32.3
+pywin32==306
+python-dateutil==2.9.0.post0
+pytz==2024.1

@@ -7,6 +7,12 @@ import pandas as pd
 from flask import Flask, request, jsonify
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
+# ====== NOVOS IMPORTS (WhatsApp + Excel) ======
+import time
+import mimetypes
+import requests
+import win32com.client as win32  # Excel (somente Windows)
+
 app = Flask(__name__)
 
 # =========================
@@ -123,7 +129,7 @@ def require_auth(fn):
 # -------------------------
 # Cálculo principal
 # -------------------------
-def calcular_metricas(df: pd.DataFrame, *, dedup: int | None = None) -> dict:
+def calcular_metricas(df: pd.DataFrame, dedup: int = None) -> dict:
     df = _normalize_columns(df)
 
     # ---- Mapear possíveis nomes do ID da cota para 'id_cota'
@@ -386,7 +392,7 @@ def _to_compact_output(resultado_dict: dict) -> dict:
     return out
 
 # -------------------------
-# Rotas
+# Rotas principais
 # -------------------------
 @app.route("/health", methods=["GET"])
 def health():
@@ -465,6 +471,221 @@ def receber_workato():
         return jsonify({"status": "error", "message": str(ve)}), 400
     except Exception as e:
         return jsonify({"status": "error", "message": f"Erro inesperado: {e}"}), 500
+
+
+# ======================================================
+# ========== NOVO ENDPOINT: /whatsapp/send-graph =======
+# ======================================================
+
+# Credenciais WhatsApp Cloud API (variáveis de ambiente)
+WABA_PHONE_NUMBER_ID = os.getenv("WABA_PHONE_NUMBER_ID")
+WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
+WA_API_BASE = f"https://graph.facebook.com/v22.0/{WABA_PHONE_NUMBER_ID}" if WABA_PHONE_NUMBER_ID else None
+WA_HEADERS_JSON = {"Authorization": f"Bearer {WHATSAPP_TOKEN}", "Content-Type": "application/json"} if WHATSAPP_TOKEN else {}
+WA_HEADERS_FORM = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"} if WHATSAPP_TOKEN else {}
+
+def _wa_raise(r: requests.Response):
+    if r.status_code >= 400:
+        try:
+            detail = r.json()
+        except Exception:
+            detail = r.text
+        raise RuntimeError(f"WhatsApp API error {r.status_code}: {detail}")
+
+def wa_upload_media(file_path: str, mime: str = None) -> str:
+    if not WA_API_BASE or not WHATSAPP_TOKEN:
+        raise RuntimeError("WABA_PHONE_NUMBER_ID/WHATSAPP_TOKEN não configurados.")
+    if mime is None:
+        mime = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+    with open(file_path, "rb") as f:
+        files = {"file": (os.path.basename(file_path), f, mime)}
+        data = {"messaging_product": "whatsapp"}
+        r = requests.post(f"{WA_API_BASE}/media", headers=WA_HEADERS_FORM, files=files, data=data, timeout=60)
+    _wa_raise(r)
+    return r.json()["id"]
+
+def wa_send_image_by_id(to: str, media_id: str, caption: str = None):
+    if not WA_API_BASE or not WHATSAPP_TOKEN:
+        raise RuntimeError("WABA_PHONE_NUMBER_ID/WHATSAPP_TOKEN não configurados.")
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": "".join(filter(str.isdigit, to)),  # 55DDDNUMERO (sem +)
+        "type": "image",
+        "image": {"id": media_id, **({"caption": caption} if caption else {})},
+    }
+    r = requests.post(f"{WA_API_BASE}/messages", headers=WA_HEADERS_JSON, json=payload, timeout=20)
+    _wa_raise(r)
+    return r.json()
+
+def wa_send_template(to: str, name: str, lang_code: str = "pt_BR", body_params: list = None):
+    if not WA_API_BASE or not WHATSAPP_TOKEN:
+        raise RuntimeError("WABA_PHONE_NUMBER_ID/WHATSAPP_TOKEN não configurados.")
+    template = {"name": name, "language": {"code": lang_code}}
+    if body_params:
+        template["components"] = [{"type": "body", "parameters": body_params}]
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": "".join(filter(str.isdigit, to)),
+        "type": "template",
+        "template": template,
+    }
+    r = requests.post(f"{WA_API_BASE}/messages", headers=WA_HEADERS_JSON, json=payload, timeout=20)
+    _wa_raise(r)
+    return r.json()
+
+def wa_send_template_with_image_header(to: str, name: str, media_id: str, body_text: str, lang_code: str = "pt_BR"):
+    """Envia template com cabeçalho de imagem (fora das 24h)."""
+    if not WA_API_BASE or not WHATSAPP_TOKEN:
+        raise RuntimeError("WABA_PHONE_NUMBER_ID/WHATSAPP_TOKEN não configurados.")
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": "".join(filter(str.isdigit, to)),
+        "type": "template",
+        "template": {
+            "name": name,
+            "language": {"code": lang_code},
+            "components": [
+                {"type": "header", "parameters": [{ "type": "image", "image": {"id": media_id} }]},
+                {"type": "body", "parameters": [{ "type": "text", "text": body_text }]}
+            ]
+        }
+    }
+    r = requests.post(f"{WA_API_BASE}/messages", headers=WA_HEADERS_JSON, json=payload, timeout=20)
+    _wa_raise(r)
+    return r.json()
+
+def exportar_grafico_para_png(caminho_excel: str, caminho_png: str, sheet_index: int = 1, chart_index: int = 1):
+    excel = win32.Dispatch("Excel.Application")
+    excel.Visible = False
+    try:
+        wb = excel.Workbooks.Open(caminho_excel)
+        ws = wb.Sheets(sheet_index)
+        if ws.ChartObjects().Count < chart_index:
+            raise RuntimeError(f"Nenhum gráfico na planilha {sheet_index} (ou índice {chart_index} inexistente).")
+        chart = ws.ChartObjects(chart_index).Chart
+        chart.Export(caminho_png)  # extensão .png define o formato
+    finally:
+        wb.Close(False)
+        excel.Quit()
+
+@app.route("/whatsapp/send-graph", methods=["POST"])
+@require_auth
+def whatsapp_send_graph():
+    """
+    Body JSON:
+    {
+      "numeros": ["5541999000000", "554188888888"],   # obrigatório (lista)
+      "caption": "Dados Teste A/B: 01/mm - dd/mm",    # opcional (usada como legenda e/ou texto)
+      "template_name": "resumo_semanal",              # opcional (default usado fora das 24h)
+      "force_template": true,                         # se true, usa template sempre (fora das 24h garantido)
+      "template_header_media": true,                  # se true, usa imagem no header do template
+      "caminho_excel": "C:/.../arquivo.xlsx",         # opcional
+      "caminho_png": "C:/.../grafico.png",            # opcional
+      "sheet_index": 1,                               # opcional (1-based)
+      "chart_index": 1                                # opcional (1-based)
+    }
+    """
+    if not WA_API_BASE or not WHATSAPP_TOKEN:
+        return jsonify({"status": "error", "message": "Defina WABA_PHONE_NUMBER_ID e WHATSAPP_TOKEN."}), 500
+
+    body = request.get_json(silent=True) or {}
+    numeros = body.get("numeros") or []
+    if not numeros:
+        return jsonify({"status": "error", "message": "Informe 'numeros' como lista de destinos."}), 400
+
+    caminho_excel = body.get("caminho_excel") or r"C:/Users/anne.strapacon/OneDrive - ADEMICON ADMINISTRADORA DE CONSORCIOS S A/MKT - DADOS/teste_dados_posthog.xlsx"
+    caminho_png   = body.get("caminho_png")   or r"C:/Users/anne.strapacon/Desktop/PASTA - IMAGENS GRÁFICO/grafico_extraido.png"
+    sheet_index   = int(body.get("sheet_index", 1))
+    chart_index   = int(body.get("chart_index", 1))
+
+    # texto/caption padrão
+    caption = body.get("caption")
+    if not caption:
+        hoje = datetime.now().date()
+        mes = hoje.strftime("%m")
+        dia = hoje.strftime("%d")
+        caption = f"Dados Teste A/B: 01/{mes} - {dia}/{mes}"
+
+    template_name = body.get("template_name") or "resumo_semanal"  # seu template oficial
+    force_template = bool(body.get("force_template", False))
+    use_header_media = bool(body.get("template_header_media", False))
+
+    # 1) Exporta PNG
+    try:
+        exportar_grafico_para_png(caminho_excel, caminho_png, sheet_index, chart_index)
+    except Exception as e:
+        return jsonify({"status": "error", "step": "export_png", "message": str(e)}), 500
+
+    # 2) Upload
+    try:
+        media_id = wa_upload_media(caminho_png, mime="image/png")
+    except Exception as e:
+        return jsonify({"status": "error", "step": "upload_media", "message": str(e)}), 502
+
+    # 3) Envia para cada número (com suporte a template e fora de 24h)
+    resultados = {}
+    for n in numeros:
+        try:
+            # Caminho 1: forçar template antes (fora das 24h garantido)
+            if force_template and template_name:
+                if use_header_media:
+                    # Envia template com header de imagem (resumo_semanal)
+                    wa_send_template_with_image_header(
+                        n,
+                        template_name,
+                        media_id,
+                        "Olá, segue o resumo de dados do Teste A/B 📊",
+                        "pt_BR"
+                    )
+                    resultados[n] = {"status": "enviado_via_template_com_imagem"}
+                else:
+                    # Envia template texto + depois a imagem normal
+                    wa_send_template(
+                        n,
+                        template_name,
+                        "pt_BR",
+                        [{"type": "text", "text": "Olá, segue o resumo de dados do Teste A/B 📊"}]
+                    )
+                    time.sleep(2)
+                    wa_send_image_by_id(n, media_id, caption=caption)
+                    resultados[n] = {"status": "enviado_via_template"}
+                continue
+
+            # Caminho 2: tentativa direta (dentro da janela de 24h)
+            resp = wa_send_image_by_id(n, media_id, caption=caption)
+            resultados[n] = {"status": "enviado", "resp": resp}
+
+        except Exception as e:
+            # Fallback: detecta regra de 24h e aplica template automaticamente
+            err = str(e).lower()
+            precisa_template = any(x in err for x in ["24-hour", "24 hour", "outside the 24", "requires a template"])
+            if precisa_template and template_name:
+                try:
+                    if use_header_media:
+                        wa_send_template_with_image_header(
+                            n,
+                            template_name,
+                            media_id,
+                            "Olá, segue o resumo de dados do Teste A/B 📊",
+                            "pt_BR"
+                        )
+                        resultados[n] = {"status": "enviado_via_template_com_imagem"}
+                    else:
+                        wa_send_template(
+                            n,
+                            template_name,
+                            "pt_BR",
+                            [{"type": "text", "text": "Olá, segue o resumo de dados do Teste A/B 📊"}]
+                        )
+                        time.sleep(2)
+                        resp2 = wa_send_image_by_id(n, media_id, caption=caption)
+                        resultados[n] = {"status": "enviado_apos_template", "resp": resp2}
+                except Exception as e2:
+                    resultados[n] = {"status": "falha_template", "erro": str(e2)}
+            else:
+                resultados[n] = {"status": "falha", "erro": str(e)}
+
+    return jsonify({"status": "ok", "resultados": resultados}), 200
 
 # Para rodar localmente
 if __name__ == "__main__":
