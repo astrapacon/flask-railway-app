@@ -10,6 +10,10 @@ import os
 
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-change-me")
 app.config["TOKEN_TTL_SECONDS"] = int(os.getenv("TOKEN_TTL_SECONDS", "3600"))
+app.config["MATRICULA_PREFIX"] = os.getenv("MATRICULA_PREFIX", "MR")
+app.config["MATRICULA_DIGITS"] = int(os.getenv("MATRICULA_DIGITS", "5"))  # 5 dígitos
+app.config["MATRICULA_SALT"] = os.getenv("MATRICULA_SALT", "salt-fixo-para-matricula")
+
 
 # registre os blueprints
 app.register_blueprint(auth_bp, url_prefix="/auth")
