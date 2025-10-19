@@ -1,14 +1,13 @@
-from flask import Blueprint, request, jsonify, current_app
-from modules.utils.common import generate_token
+from flask import Blueprint, jsonify, request
 
-bp = Blueprint("auth", __name__)
+# o nome tem que ser EXATAMENTE esse
+auth_bp = Blueprint("auth", __name__)
 
-@bp.post("/login")
+@auth_bp.route("/login", methods=["POST"])
 def login():
     data = request.get_json(silent=True) or {}
-    user = str(data.get("username", ""))
-    pwd  = str(data.get("password", ""))
-    if user == current_app.config["API_USERNAME"] and pwd == current_app.config["API_PASSWORD"]:
-        token = generate_token(user)
-        return jsonify({"status": "ok", "access_token": token, "expires_in": current_app.config["TOKEN_TTL_SECONDS"]})
-    return jsonify({"status": "unauthorized", "message": "Invalid credentials"}), 401
+    user = data.get("user", "guest")
+    return jsonify({
+        "ok": True,
+        "user": user
+    })

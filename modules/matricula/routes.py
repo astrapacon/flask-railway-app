@@ -1,27 +1,20 @@
 from flask import Blueprint, request, jsonify
-import random, re
+import random
+import re
 
-bp = Blueprint("matricula", __name__)
+# 🔹 O nome PRECISA ser exatamente matricula_bp
+matricula_bp = Blueprint("matricula", __name__)
 
-def gerar_matricula() -> str:
-    numero = random.randint(10000, 99999)  # 5 dígitos
-    return f"MR{numero}"
+def gerar_codigo():
+    return f"MR{random.randint(10000, 99999)}"
 
-@bp.post("/gerar")
-def gerar_matricula_endpoint():
-    """
-    POST /matricula/gerar
-    Body: { "cpf": "123.456.789-09" }
-    """
-    try:
-        data = request.get_json(silent=True) or {}
-        cpf = str(data.get("cpf", "")).strip()
+@matricula_bp.post("/gerar")
+def gerar():
+    data = request.get_json(silent=True) or {}
+    cpf = (data.get("cpf") or "").strip()
 
-        # validação simples
-        if not re.fullmatch(r"\d{3}\.?\d{3}\.?\d{3}-?\d{2}", cpf):
-            return jsonify({"status": "error", "message": "CPF inválido"}), 400
+    # valida CPF simples (só dígitos)
+    if not re.fullmatch(r"\d{11}", re.sub(r"\D", "", cpf)):
+        return jsonify(error="CPF inválido"), 400
 
-        matricula = gerar_matricula()
-        return jsonify({"status": "ok", "cpf": cpf, "matricula": matricula})
-    except Exception as e:
-        return jsonify({"status": "error", "message": f"Erro inesperado: {e}"}), 500
+    return jsonify(cpf=cpf, matricula=gerar_codigo())
