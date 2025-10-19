@@ -1,6 +1,7 @@
 pip>=24.2
 setuptools>=75.0.0
 wheel>=0.45.0
+
 Flask==3.0.3
 itsdangerous==2.2.0
 pandas==2.2.3
