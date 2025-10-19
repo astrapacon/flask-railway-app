@@ -7,15 +7,12 @@ auth_bp = Blueprint("auth", __name__)
 def login():
     """
     Body:
-      { "user": "a.strapacon", "password": "123" }
-    Retorna um token simples (HMAC base64) só para testes.
+      { "user": "seu_usuario", "password": "..." }
     """
     body = request.get_json(silent=True) or {}
     user = (body.get("user") or "guest").strip()
 
-    # Gere um token para o usuário informado
-    token = generate_token(subject=user)
-
+    token = generate_token(identity=user)  # usa SECRET_KEY e TTL
     return jsonify(ok=True, user=user, token=token), 200
 
 @auth_bp.get("/me")

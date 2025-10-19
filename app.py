@@ -3,7 +3,13 @@ from modules.auth.routes import auth_bp
 from modules.matricula.routes import matricula_bp
 from modules.workato.routes import workato_bp
 
+
 app = Flask(__name__)
+
+import os
+
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-change-me")
+app.config["TOKEN_TTL_SECONDS"] = int(os.getenv("TOKEN_TTL_SECONDS", "3600"))
 
 # registre os blueprints
 app.register_blueprint(auth_bp, url_prefix="/auth")

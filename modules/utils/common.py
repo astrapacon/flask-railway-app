@@ -4,23 +4,21 @@ from flask import request, jsonify, current_app
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import pandas as pd
 
-# nomes de colunas
-COL_ANO_NASC = "Ano Nascimento"
-COL_UF = "Uf Cliente"
-COL_CIDADE = "Cidade"
-COL_DATA_VENDA = "Cotas Id Cliente → Data Venda"
-COL_VALOR = "Cotas Id Cliente → Valor Credito Venda"
-COL_ID_COTA = "Cotas Id Cliente → Id Cota"
-COL_TEM_PAGTO = "Cotas Id Cliente → Tem Pagamento"
-COL_SEGMENTO = "Cotas Id Cliente → Segmento"
+# ============================
+# 🔐 Autenticação por token
+# ============================
 
 def _serializer():
+    # Requer: app.config["SECRET_KEY"]
     return URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="auth-token")
 
 def generate_token(identity: str) -> str:
+    # Gera token assinado com SECRET_KEY
     return _serializer().dumps({"sub": identity})
 
 def verify_token(token: str):
+    # Valida token e TTL
+    # Requer: app.config["TOKEN_TTL_SECONDS"]
     return _serializer().loads(token, max_age=current_app.config["TOKEN_TTL_SECONDS"])
 
 def require_auth(fn):
@@ -40,6 +38,20 @@ def require_auth(fn):
             return jsonify({"status": "unauthorized", "message": f"Auth error: {e}"}), 401
         return fn(*args, **kwargs)
     return wrapper
+
+# ============================
+# 📊 Constantes e helpers de dados
+# ============================
+
+# nomes de colunas
+COL_ANO_NASC = "Ano Nascimento"
+COL_UF = "Uf Cliente"
+COL_CIDADE = "Cidade"
+COL_DATA_VENDA = "Cotas Id Cliente → Data Venda"
+COL_VALOR = "Cotas Id Cliente → Valor Credito Venda"
+COL_ID_COTA = "Cotas Id Cliente → Id Cota"
+COL_TEM_PAGTO = "Cotas Id Cliente → Tem Pagamento"
+COL_SEGMENTO = "Cotas Id Cliente → Segmento"
 
 def _safe_div(a, b):
     return float(a) / float(b) if b not in (0, 0.0, None) else None
