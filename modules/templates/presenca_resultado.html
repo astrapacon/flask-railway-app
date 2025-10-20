@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Resultado da Presença{% endblock %}
+{% block content %}
+{% if ok %}
+  {% if already %}
+    <div class="pill warn">ℹ️ Presença já registrada</div>
+    <h1>Presença já confirmada hoje</h1>
+    <p class="muted">Matrícula <b class="mono">{{ code }}</b>{% if name %} — {{ name }}{% endif %}.
+    Registro anterior em <span class="mono">{{ when }}</span>.</p>
+  {% else %}
+    <div class="pill ok">✅ Presença confirmada</div>
+    <h1>Presença registrada com sucesso</h1>
+    <p class="muted">Matrícula <b class="mono">{{ code }}</b>{% if name %} — {{ name }}{% endif %}.
+    Data: <span class="mono">{{ date }}</span>.</p>
+  {% endif %}
+  <div class="mt"><a class="btn" href="/presenca">Nova presença</a></div>
+{% else %}
+  <div class="pill err">❌ Erro</div>
+  <h1>{{ title }}</h1>
+  <p class="muted">{{ msg }}</p>
+  <div class="mt"><a class="btn" href="/presenca">Tentar novamente</a></div>
+{% endif %}
+{% endblock %}

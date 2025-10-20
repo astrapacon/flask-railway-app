@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}{% endblock %} • Programa de Multiplicadores</title>
+  <style>
+    :root{--ok:#10b981;--bg:#0f172a;--card:#111827;--line:#1f2937;--text:#e5e7eb;--warn:#f59e0b;--err:#ef4444}
+    html,body{margin:0;background:linear-gradient(180deg,#0b1222,var(--bg));color:var(--text);font-family:system-ui,Segoe UI,Roboto,Arial}
+    .wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:24px;max-width:620px;width:100%;
+          box-shadow:0 16px 40px rgba(0,0,0,.35)}
+    h1{margin:.2rem 0 1rem;font-size:1.5rem}
+    .row{display:flex;gap:8px}
+    input{flex:1;padding:12px;border-radius:10px;border:1px solid #374151;background:#0b1222;color:var(--text)}
+    button,.btn{padding:12px 16px;border:0;border-radius:10px;background:var(--ok);color:#052e24;font-weight:800;cursor:pointer;text-decoration:none}
+    .muted{opacity:.85}
+    .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+    .pill{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid var(--line);background:#0b1222;font-weight:700}
+    .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
+    .mt{margin-top:12px}
+    .msg{margin:.6rem 0 0}
+    .alert{margin-top:8px;padding:10px;border-radius:10px;background:#0b1222;border:1px solid var(--line)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</body>
+</html>

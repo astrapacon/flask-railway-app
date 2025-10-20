@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Confirmar Presença{% endblock %}
+{% block content %}
+<h1>Confirmar Presença</h1>
+<p class="muted">Digite sua matrícula (ex.: <span class="mono">MR25684</span>) para registrar a presença de hoje.</p>
+
+<form class="row" action="/presenca/confirmar" method="get">
+  <input name="matricula" placeholder="MR25684" value="{{ request.args.get('pref','') }}">
+  <button>Confirmar</button>
+</form>
+
+<p class="mt muted">Dica: você também pode acessar diretamente por QR/link:<br>
+<span class="mono">/presenca/confirmar?matricula=MR25684</span></p>
+{% endblock %}

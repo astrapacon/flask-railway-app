@@ -10,3 +10,6 @@ python-dateutil==2.9.0.post0
 gunicorn==21.2.0
 requests==2.32.3
 itsdangerous>=2.1.2
+flask
+flask_sqlalchemy
+gunicorn
