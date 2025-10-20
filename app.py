@@ -46,8 +46,20 @@ def create_app() -> Flask:
         DEBUG=os.getenv("FLASK_DEBUG", "0") == "1",
         JSON_SORT_KEYS=False,
     )
+    # dentro de create_app(), antes de db.init_app(app)
+    db_url = os.getenv("DATABASE_URL", "sqlite:///local.db")
 
-    # ✅ Inicializa o SQLAlchemy com o app
+    # normaliza heroku-style
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+    # (apenas se você escolheu psycopg3)
+    # Se quiser forçar o dialecto psycopg3:
+    # if db_url.startswith("postgresql://"):
+    #     db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
+
+    app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+
     db.init_app(app)
 
     # =========================
