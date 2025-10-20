@@ -219,6 +219,7 @@ def _success_page_presenca(code):
 
 # ------------------ Rota principal ------------------
 @presenca_bp.route("/", methods=["GET"])
+@presenca_bp.route("/", methods=["GET"])
 def presenca_page():
     code = (request.args.get("matricula") or "").strip().upper()
     tried = bool(code)
@@ -240,9 +241,12 @@ def presenca_page():
                                       msg="Matrícula não encontrada.",
                                       matricula=code)
 
-    if m.status != "active":
+    # ⚠️ defensivo
+    status = getattr(m, "status", "active")
+
+    if status != "active":
         return render_template_string(PAGE, tried=True, ok=False,
-                                      msg=f"Matrícula inativa (status: {m.status})",
+                                      msg=f"Matrícula inativa (status: {status})",
                                       matricula=code)
 
     # verifica presença já existente

@@ -125,9 +125,8 @@ def create_app() -> Flask:
 
     @app.errorhandler(Exception)
     def handle_generic_exc(e: Exception):
-        """Erro genérico (500). Evita vazar stacktrace."""
-        # Para logar no console, descomente:
-        # app.logger.exception(e)
+        """Erro genérico (500). Evita vazar stacktrace (mas loga no console)."""
+        app.logger.exception(e)  # loga stacktrace
         return (
             jsonify(
                 ok=False,

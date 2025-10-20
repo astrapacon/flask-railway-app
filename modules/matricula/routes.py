@@ -209,6 +209,9 @@ def _success_page_matricula(code, name=None):
 
 # ======================== Rotas: Página HTML =========================
 @matricula_bp.get("/consulta")
+@matricula_bp.get("/consulta")
+@matricula_bp.get("/consulta")
+@matricula_bp.get("/consulta")
 def consulta():
     code = (request.args.get("code") or "").strip().upper()
     tried = bool(code)
@@ -216,7 +219,7 @@ def consulta():
     if not tried:
         return render_template_string(PAGE, tried=False)
 
-    # valida formato
+    # Regex MR + 5 dígitos
     if not FORMAT.fullmatch(code):
         return render_template_string(PAGE, tried=True, ok=False,
                                       msg="Formato inválido. Use MR + 5 dígitos (ex: MR25684)",
@@ -227,9 +230,29 @@ def consulta():
         return render_template_string(PAGE, tried=True, ok=False,
                                       msg="Matrícula não encontrada.", code=code)
 
-    if m.status != "active":
+    # Defensivo (evita AttributeError -> 500)
+    status = getattr(m, "status", "active")
+    name   = getattr(m, "holder_name", None)
+
+    if status != "active":
         return render_template_string(PAGE, tried=True, ok=False,
-                                      msg=f"Matrícula inativa (status: {m.status})", code=code)
+                                      msg=f"Matrícula inativa (status: {status})", code=code)
+
+    # Tenta página animada; se falhar, entrega fallback simples e loga erro
+    try:
+        return _success_page_matricula(m.code, name)
+    except Exception as e:
+        current_app.logger.exception(e)
+        return render_template_string("""
+            <!doctype html><meta charset="utf-8">
+            <title>Matrícula válida</title>
+            <h1 style="font-family:system-ui">Matrícula {{code}} válida {{name and (' — ' + name) or ''}}</h1>
+            <p>O template animado falhou. Veja o log no console para a linha exata.</p>
+            <a href="/matricula/consulta">Voltar</a>
+        """, code=m.code, name=name), 200
+
+
+
 
     # Sucesso => página animada
     return _success_page_matricula(m.code, m.holder_name)
