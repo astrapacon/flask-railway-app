@@ -12,6 +12,7 @@ class Matricula(db.Model):
     code = db.Column(db.String(16), unique=True, nullable=False, index=True)  # Ex: MR25684
     holder_name = db.Column(db.String(120))
     cpf = db.Column(db.String(14), unique=True)  # CPF vinculado (pode ser opcional)
+    birth_date = db.Column(db.Date) 
     status = db.Column(db.String(16), default="active")  # active|revoked|expired
     created_at = db.Column(db.DateTime, default=dt.datetime.utcnow)
 

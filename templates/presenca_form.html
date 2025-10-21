@@ -66,10 +66,11 @@
     <div id="mensagem" class="alert alert--err"></div>
   </form>
 
-  <p class="forgot">
-    Multiplicador, esqueceu sua matrícula?
-    <a href="{{ url_for('matricula.consulta') }}">Consulte aqui</a>
-  </p>
+  <p class="muted" style="margin-top:8px">
+  Multiplicador, esqueceu sua matrícula?
+  <a href="{{ url_for('matricula.lembrar_page') }}">consulte aqui</a>.
+</p>
+
 {% endblock %}
 
 {% block scripts %}

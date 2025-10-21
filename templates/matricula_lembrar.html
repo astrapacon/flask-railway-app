@@ -3,9 +3,17 @@
 
 {% block head_extra %}
 <style>
-  /* utilitários (remova se já existir na base) */
+  /* utilitários (caso não estejam na base) */
   .title{ font-size:24px; font-weight:800; margin:0 0 4px; color:var(--text); }
   .muted{ color:#666; }
+  .mt{ margin-top:16px; }
+
+  /* pill simples para o cabeçalho */
+  .pill{
+    display:inline-block; padding:6px 12px; border:1px solid var(--line);
+    border-radius:999px; font-weight:800; background:#fafafa; opacity:.95;
+  }
+
   .grid{ display:grid; grid-template-columns:1fr; gap:14px; margin-top:20px; }
   .field{ display:flex; flex-direction:column; gap:6px; }
   .inp{
@@ -13,25 +21,20 @@
     padding:0 14px; font-size:18px; letter-spacing:.4px;
     background:#f7f7f7; color:var(--text);
   }
+
   .alert{ margin-top:18px; padding:14px 16px; border-radius:12px; }
   .alert--err{ border:2px solid #7a1315; background:#fde8e8; color:#7a1315; }
   .alert--ok{ border:2px solid #137333; background:#e6f4ea; color:#0f5f2a; }
+
   .code-badge{
     display:inline-block; margin-top:10px; padding:8px 14px;
     border:2px dashed var(--ok); border-radius:10px; font-weight:800; letter-spacing:.5px;
     font-family:ui-monospace,Menlo,Consolas,monospace;
   }
-  .mt{ margin-top:16px; }
 
-  /* --- Botão animado: normal -> loading -> success(check) / error --- */
-  .btn{
-    height:54px; border:none; border-radius:12px; background:var(--ok); color:#fff;
-    font-weight:800; cursor:pointer; font-size:17px;
-  }
-  .btn:hover{ background:var(--ok-hover); }
-
+  /* Botão animado */
   .btn-anim{
-    position:relative; display:inline-grid; place-items:center; gap:8px;
+    position:relative; display:inline-grid; place-items:center;
     min-width:220px; height:54px; padding:0 18px; border:none; border-radius:12px;
     background:var(--ok); color:#fff; font-weight:800; cursor:pointer; font-size:17px;
     transition: background .2s ease, transform .06s ease, width .25s ease, border-radius .25s ease;
@@ -55,18 +58,16 @@
   }
   @keyframes draw{ to{ stroke-dashoffset:0; } }
 
-  /* loading */
+  /* states */
   .btn-anim.is-loading{ cursor:default; }
   .btn-anim.is-loading .label{ opacity:0; }
   .btn-anim.is-loading .spinner{ opacity:1; animation:spin .8s linear infinite; }
 
-  /* success */
   .btn-anim.is-success{ background:#137333; border-radius:999px; }
   .btn-anim.is-success .label{ opacity:0; }
   .btn-anim.is-success .spinner{ opacity:0; animation:none; }
   .btn-anim.is-success .check{ opacity:1; animation:draw .6s ease forwards; }
 
-  /* error (shake sutil) */
   .btn-anim.is-error{ background:#7a1315; animation:shake .32s ease; }
   @keyframes shake{
     10%,90%{ transform:translateX(-1px); }
@@ -113,7 +114,9 @@
     <div id="okname" class="muted" style="margin-top:4px"></div>
     <div id="okcode" class="code-badge"></div>
     <div style="margin-top:12px">
-      <a class="btn" href="{{ url_for('presenca.presenca_page') }}">Usar matrícula para registrar presença</a>
+      <a class="btn-anim" href="{{ url_for('presenca.presenca_page') }}" style="text-decoration:none;display:inline-grid;place-items:center;height:48px;min-width:280px;">
+        <span class="label">Usar matrícula para registrar presença</span>
+      </a>
     </div>
   </div>
 </div>
@@ -122,6 +125,15 @@
 {% block scripts %}
 <script>
 function onlyDigits(s){ return (s||"").replace(/\D+/g,""); }
+
+/* Converte DD/MM/AAAA -> YYYY-MM-DD (ou retorna "" se inválida) */
+function toISODateOrEmpty(br){
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec((br||"").trim());
+  if(!m) return "";
+  const dd = parseInt(m[1],10), mm = parseInt(m[2],10), yy = parseInt(m[3],10);
+  if(mm < 1 || mm > 12 || dd < 1 || dd > 31) return "";
+  return `${yy}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+}
 
 const form   = document.getElementById('f-lembrar');
 const btn    = document.getElementById('btn-lembrar');
@@ -135,8 +147,11 @@ form.addEventListener('submit', async (e) => {
   msg.style.display = 'none';
   box.style.display = 'none';
 
-  const cpf   = document.getElementById('cpf').value.trim();
-  const birth = document.getElementById('birth_date').value.trim();
+  const cpfRaw = document.getElementById('cpf').value.trim();
+  const birthBr = document.getElementById('birth_date').value.trim();
+
+  const cpfDigits = onlyDigits(cpfRaw).slice(0,11);
+  const birthIso  = toISODateOrEmpty(birthBr); // "" se usuário não preencheu ou formato inválido
 
   // estado: carregando
   btn.classList.remove('is-success','is-error');
@@ -147,7 +162,7 @@ form.addEventListener('submit', async (e) => {
     const r = await fetch('{{ url_for("matricula.api_lembrar") }}', {
       method: 'POST',
       headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify({ cpf, birth_date: birth })
+      body: JSON.stringify({ cpf: cpfDigits, birth: birthIso })
     });
     const data = await r.json();
 
@@ -156,15 +171,15 @@ form.addEventListener('submit', async (e) => {
       btn.classList.remove('is-loading');
       btn.classList.add('is-success');
 
-      nameEl.textContent = data.holder_name ? `Olá, ${data.holder_name}.` : '';
+      nameEl.textContent = data.holder ? `Olá, ${data.holder}.` : '';
       codeEl.textContent = data.code;
       box.style.display = 'block';
 
-      // opcional: voltar ao estado inicial após alguns segundos
+      // opcional: voltar ao estado inicial depois
       setTimeout(() => {
         btn.classList.remove('is-success');
         btn.removeAttribute('disabled');
-      }, 1800);
+      }, 1500);
 
     } else {
       // erro → vibrar e mostrar mensagem
@@ -189,7 +204,7 @@ form.addEventListener('submit', async (e) => {
   }
 });
 
-// máscaras de entrada (client-side UX)
+/* máscaras de entrada (UX) */
 const cpfInp = document.getElementById('cpf');
 cpfInp.addEventListener('input', () => {
   let v = onlyDigits(cpfInp.value).slice(0,11);

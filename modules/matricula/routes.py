@@ -23,21 +23,24 @@ def _is_valid_cpf_digits(d: str) -> bool:
     d = _only_digits(d)
     return len(d) == 11 and d.isdigit()
 
-def _parse_birth_date(s: str):
+def _parse_birth_date(raw: str):
     """
     Converte string para date.
     Aceita 'YYYY-MM-DD' (ISO) ou 'DD/MM/YYYY'.
     Retorna _dt.date ou None.
     """
-    if not s:
+    raw = (raw or "").strip()
+    if not raw:
         return None
-    s = s.strip()
     try:
-        if "-" in s:
-            return _dt.date.fromisoformat(s)
-        if "/" in s:
-            d, m, y = s.split("/")
-            return _dt.date(int(y), int(m), int(d))
+        # ISO
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+            y, m, d = [int(x) for x in raw.split("-")]
+            return _dt.date(y, m, d)
+        # BR
+        if re.fullmatch(r"\d{2}/\d{2}/\d{4}", raw):
+            d, m, y = [int(x) for x in raw.split("/")]
+            return _dt.date(y, m, d)
     except Exception:
         return None
     return None
@@ -163,7 +166,7 @@ def api_lembrar():
     """
     data = request.get_json(silent=True) or {}
     cpf_raw = data.get("cpf")
-    birth_raw = data.get("birth_date")
+    birth_raw = data.get("birth_date") or data.get("birth")  # aceita as duas chaves
 
     cpf = _only_digits(cpf_raw)
     birth = _parse_birth_date(birth_raw)
@@ -184,7 +187,7 @@ def api_lembrar():
 
     return jsonify(ok=True, code=m.code, holder_name=m.holder_name), 200
 
-# ======================== Gerar matrícula a partir do CPF ========================
+# ======================== Gerar matrícula a partir do CPF (com birth/name opcionais) ========================
 @matricula_bp.post("/gerar")
 def gerar_post():
     """
@@ -286,6 +289,119 @@ def gerar_get():
         "holder_name": m.holder_name,
         "status": m.status
     }}), 200
+
+# ======================== Versão CPF + data (rotas dedicadas) ========================
+@matricula_bp.post("/gerar_dados")
+def gerar_com_dados_post():
+    """
+    Gera (ou retorna) a matrícula usando CPF + Data de Nascimento.
+    Body JSON:
+      { "cpf": "12345678900", "birth": "YYYY-MM-DD" }  // ou "DD/MM/AAAA"
+      (também aceita chave "birth_date")
+    """
+    data = request.get_json(silent=True) or {}
+    cpf = _only_digits(data.get("cpf"))
+    birth_raw = data.get("birth") or data.get("birth_date")
+    birth = _parse_birth_date(birth_raw)
+
+    if not _is_valid_cpf_digits(cpf):
+        return jsonify(ok=False, message="CPF inválido. Envie 11 dígitos."), 400
+    if not birth:
+        return jsonify(ok=False, message="Data de nascimento inválida. Use YYYY-MM-DD ou DD/MM/AAAA."), 400
+
+    existing = Matricula.query.filter_by(cpf=cpf).first()
+    if existing:
+        # Se já existe, checa/atualiza data
+        if hasattr(existing, "birth_date"):
+            if existing.birth_date and existing.birth_date != birth:
+                return jsonify(ok=False, message="Data de nascimento não confere para este CPF."), 409
+            if not existing.birth_date:
+                existing.birth_date = birth
+                db.session.commit()
+        return jsonify({
+            "ok": True,
+            "matricula": {
+                "code": existing.code,
+                "cpf": existing.cpf,
+                "birth_date": getattr(existing, "birth_date", None).isoformat() if getattr(existing, "birth_date", None) else None,
+                "status": existing.status
+            }
+        }), 200
+
+    # Cria novo
+    code = _code_from_cpf(cpf)
+    if Matricula.query.filter_by(code=code).first():
+        code = _code_from_cpf(cpf + "|1")
+
+    m = Matricula(code=code, cpf=cpf, status="active")
+    if hasattr(m, "birth_date"):
+        m.birth_date = birth
+    db.session.add(m)
+    db.session.commit()
+
+    return jsonify({
+        "ok": True,
+        "matricula": {
+            "code": m.code,
+            "cpf": m.cpf,
+            "birth_date": getattr(m, "birth_date", None).isoformat() if getattr(m, "birth_date", None) else None,
+            "status": m.status
+        }
+    }), 200
+
+@matricula_bp.get("/gerar_dados")
+def gerar_com_dados_get():
+    """
+    Versão GET para teste rápido:
+    /matricula/gerar_dados?cpf=12345678900&birth=YYYY-MM-DD (ou DD/MM/AAAA)
+    """
+    cpf = _only_digits(request.args.get("cpf"))
+    birth_raw = request.args.get("birth") or request.args.get("birth_date")
+    birth = _parse_birth_date(birth_raw)
+
+    if not _is_valid_cpf_digits(cpf):
+        return jsonify(ok=False, message="CPF inválido. Envie 11 dígitos."), 400
+    if not birth:
+        return jsonify(ok=False, message="Data de nascimento inválida. Use YYYY-MM-DD ou DD/MM/AAAA."), 400
+
+    # Reusa a lógica do POST
+    existing = Matricula.query.filter_by(cpf=cpf).first()
+    if existing:
+        if hasattr(existing, "birth_date"):
+            if existing.birth_date and existing.birth_date != birth:
+                return jsonify(ok=False, message="Data de nascimento não confere para este CPF."), 409
+            if not existing.birth_date:
+                existing.birth_date = birth
+                db.session.commit()
+        return jsonify({
+            "ok": True,
+            "matricula": {
+                "code": existing.code,
+                "cpf": existing.cpf,
+                "birth_date": getattr(existing, "birth_date", None).isoformat() if getattr(existing, "birth_date", None) else None,
+                "status": existing.status
+            }
+        }), 200
+
+    code = _code_from_cpf(cpf)
+    if Matricula.query.filter_by(code=code).first():
+        code = _code_from_cpf(cpf + "|1")
+
+    m = Matricula(code=code, cpf=cpf, status="active")
+    if hasattr(m, "birth_date"):
+        m.birth_date = birth
+    db.session.add(m)
+    db.session.commit()
+
+    return jsonify({
+        "ok": True,
+        "matricula": {
+                "code": m.code,
+                "cpf": m.cpf,
+                "birth_date": getattr(m, "birth_date", None).isoformat() if getattr(m, "birth_date", None) else None,
+                "status": m.status
+        }
+    }), 200
 
 # ======================== Listar / Exportar ========================
 @matricula_bp.get("/list.json")
