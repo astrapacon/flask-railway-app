@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Resultado da Consulta{% endblock %}
+
+{% block content %}
+<style>
+    /* Estilo para a transição suave do bloco de resultados */
+    .result-block {
+        padding-top: 10px;
+        opacity: 0;
+        animation: fadeIn 0.8s ease-out 0.1s forwards; /* Animação de entrada suave */
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    /* Estilo para o link secundário (Nova Consulta) */
+    .btn-secondary {
+        margin-top: 15px;
+        display: inline-block;
+        color: var(--ok); /* Cor Bordo */
+        text-decoration: none;
+        font-weight: 700;
+        transition: color 0.2s;
+        font-size: 0.95rem;
+    }
+    .btn-secondary:hover {
+        color: var(--warn); /* Dourado no hover */
+    }
+    .pill {
+        margin-bottom: 12px;
+    }
+</style>
+
+<h1>Resultado da Consulta</h1>
+
+{% if not found %}
+    <div class="result-block">
+        <div class="pill err">❌ Matrícula não encontrada</div>
+        <p class="msg">A matrícula <b class="mono">{{ code }}</b> não foi localizada em nossa base de dados.</p>
+        
+        <div class="mt">
+            <a class="btn" href="/matriculas/consulta">Tentar outra consulta</a>
+        </div>
+    </div>
+{% else %}
+    <div class="result-block">
+        <div class="pill ok">✅ Matrícula ativa</div>
+        <p class="msg">Matrícula <b class="mono">{{ code }}</b>{% if name %} — **{{ name }}**{% endif %}.</p>
+        <p class="msg">Status atual: <b>{{ status }}</b></p>
+        
+        <div class="mt">
+            <a class="btn" href="/presenca?pref={{ code }}">Ir para Presença</a>
+            <p class="muted">
+                <a class="btn-secondary" href="/matriculas/consulta">Consultar outra matrícula</a>
+            </p>
+        </div>
+    </div>
+{% endif %}
+{% endblock %}

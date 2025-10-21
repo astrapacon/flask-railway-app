@@ -3,25 +3,162 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>{% block title %}{% endblock %} • Programa de Multiplicadores</title>
+  <title>{% block title %}Programa de Multiplicadores{% endblock %}</title>
+
   <style>
-    :root{--ok:#10b981;--bg:#0f172a;--card:#111827;--line:#1f2937;--text:#e5e7eb;--warn:#f59e0b;--err:#ef4444}
-    html,body{margin:0;background:linear-gradient(180deg,#0b1222,var(--bg));color:var(--text);font-family:system-ui,Segoe UI,Roboto,Arial}
-    .wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
-    .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:24px;max-width:620px;width:100%;
-          box-shadow:0 16px 40px rgba(0,0,0,.35)}
-    h1{margin:.2rem 0 1rem;font-size:1.5rem}
-    .row{display:flex;gap:8px}
-    input{flex:1;padding:12px;border-radius:10px;border:1px solid #374151;background:#0b1222;color:var(--text)}
-    button,.btn{padding:12px 16px;border:0;border-radius:10px;background:var(--ok);color:#052e24;font-weight:800;cursor:pointer;text-decoration:none}
-    .muted{opacity:.85}
-    .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
-    .pill{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid var(--line);background:#0b1222;font-weight:700}
-    .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
-    .mt{margin-top:12px}
-    .msg{margin:.6rem 0 0}
-    .alert{margin-top:8px;padding:10px;border-radius:10px;background:#0b1222;border:1px solid var(--line)}
+    /* =========================
+       Cores (Ademicon)
+       ========================= */
+    :root{
+      --ok:        #7a1315;  /* vermelho bordô (primária) */
+      --ok-hover:  #6a1012;  /* bordô mais escuro (hover) */
+      --bg:        #231f20;  /* fundo escuro */
+      --card:      #2e2b2c;  /* card */
+      --line:      #3a3536;  /* borda */
+      --text:      #f4f4f4;  /* texto */
+      --warn:      #d1a34a;  /* aviso (dourado) */
+      --err:       #ef4444;  /* erro (vermelho vivo) */
+    }
+
+    /* =========================
+       Reset/estrutura
+       ========================= */
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+    }
+
+    .wrap {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 720px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 24px;
+      box-shadow: 0 16px 40px rgba(0,0,0,.5);
+    }
+
+    h1 {
+      margin: .2rem 0 1rem;
+      font-size: 1.5rem;
+      line-height: 1.2;
+    }
+
+    /* =========================
+       Layout utilitário
+       ========================= */
+    .row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap; /* quebra no mobile */
+    }
+
+    /* =========================
+       Form & botões
+       ========================= */
+    input, select, textarea {
+      flex: 1 1 240px;
+      width: 100%;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: #1a1717;
+      color: var(--text);
+      outline: none;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+
+    input::placeholder { color: #cfcfcf; opacity: .8; }
+
+    input:focus-visible, select:focus-visible, textarea:focus-visible {
+      border-color: var(--ok);
+      box-shadow: 0 0 0 3px rgba(122,19,21,.25);
+    }
+
+    button, .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: .5rem;
+      padding: 12px 16px;
+      border: 0;
+      border-radius: 10px;
+      background: var(--ok);
+      color: #f4f4f4;
+      font-weight: 800;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background-color .25s ease, transform .1s ease, box-shadow .15s ease;
+    }
+
+    button:hover, .btn:hover {
+      background-color: var(--ok-hover);
+      transform: translateY(-1px);
+    }
+
+    button:active, .btn:active {
+      transform: translateY(0);
+    }
+
+    button:focus-visible, .btn:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(122,19,21,.35);
+    }
+
+    /* =========================
+       Chips / estados / textos
+       ========================= */
+    .muted { opacity: .85; }
+    .mono  { font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--card);
+      font-weight: 700;
+    }
+
+    .ok   { color: var(--ok); }
+    .warn { color: var(--warn); }
+    .err  { color: var(--err); }
+
+    .mt   { margin-top: 12px; }
+
+    .msg  { margin: .6rem 0 0; }
+
+    .alert {
+      margin-top: 8px;
+      padding: 10px;
+      border-radius: 10px;
+      background: var(--card);
+      border: 1px solid var(--line);
+    }
+
+    /* Respeita acessibilidade de movimento */
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; }
+    }
   </style>
+
+  {% block head_extra %}{% endblock %}
 </head>
 <body>
   <div class="wrap">

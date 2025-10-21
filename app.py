@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------
 
 import os
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 from werkzeug.exceptions import HTTPException
 
 # -----------------------------------------------------------------------------
@@ -104,6 +104,29 @@ def create_app() -> Flask:
     def ready():
         """Verifica se o app está pronto (poderia testar o DB aqui)"""
         return jsonify(ready=True), 200
+
+    # Mapa de rotas para diagnóstico (útil no Railway)
+    @app.get("/__routes")
+    def routes_map():
+        routes = []
+        for rule in app.url_map.iter_rules():
+            if rule.endpoint == "static":
+                continue
+            routes.append({
+                "rule": str(rule),
+                "methods": sorted([m for m in rule.methods if m not in ("HEAD", "OPTIONS")]),
+                "endpoint": rule.endpoint,
+            })
+        return jsonify({"count": len(routes), "routes": routes})
+
+    # Favicon básico (evita 404 do navegador). Coloque um favicon em ./static se quiser.
+    @app.get("/favicon.ico")
+    def favicon():
+        static_dir = os.path.join(app.root_path, "static")
+        if os.path.exists(os.path.join(static_dir, "favicon.ico")):
+            return send_from_directory(static_dir, "favicon.ico")
+        # 204 = No Content (sem erro no log)
+        return ("", 204)
 
     # =========================================================================
     # Handlers de erro — respostas padronizadas em JSON
