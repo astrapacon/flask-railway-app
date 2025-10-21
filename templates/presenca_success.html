@@ -2,149 +2,152 @@
 {% block title %}Presença confirmada{% endblock %}
 
 {% block head_extra %}
-<!-- Framer Motion (para animações via JS puro usando Web Animations) -->
-<script src="https://unpkg.com/framer-motion@10.12.18/dist/framer-motion.umd.js"></script>
-
 <style>
-  .pill{display:inline-block;padding:6px 10px;border:1px solid var(--line);border-radius:999px;font-weight:700;opacity:.9}
+  .center{text-align:center}
   .muted{color:#666}
   .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
   .mt{margin-top:16px}
 
-  .wrap{display:grid;grid-template-columns:1fr;gap:16px;margin-top:12px}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;margin-top:12px}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 8px 24px rgba(0,0,0,.12);text-align:center;min-height:160px;position:relative;overflow:hidden}
-  .btn{display:inline-block;margin-top:18px;padding:12px 16px;background:var(--ok);color:#fff;border-radius:12px;text-decoration:none;font-weight:800}
-  .btn:hover{background:var(--ok-hover)}
-  @media (min-width:820px){ .wrap{grid-template-columns:1fr 1fr} }
+  /* Pill com logo do Programa de Multiplicadores */
+  .pill{
+    display:inline-flex;align-items:center;gap:10px;
+    padding:6px 12px;border:1px solid var(--line);
+    border-radius:999px;font-weight:800;opacity:.95;
+    background:#fafafa;
+  }
+  .pill .logo{
+    width:22px;height:22px;object-fit:contain;display:block;
+    filter:drop-shadow(0 1px 1px rgba(0,0,0,.08));
+  }
 
-  .credit{margin:24px auto 0;max-width:640px;text-align:center;font-size:.85rem;color:#818181}
+  .title{font-size:1.8rem;font-weight:900;margin:14px 0 8px}
+  .subtitle{font-size:1.05rem;color:#444;margin:0 0 6px}
 
-  /* --- ENVELOPE --- */
-  .envelope-container{
-    position:relative;
-    width:260px;
-    height:180px;
-    margin:40px auto;
-    perspective:1000px;
+  /* --- ENVELOPE MENOR E CENTRALIZADO --- */
+  .envelope-stage{
+    display:grid;place-items:center;
+    margin:32px auto 16px;
+    min-height:140px;
   }
   .envelope{
-    width:100%; height:100%;
-    position:relative;
-    transform-style:preserve-3d;
+    --env-w: 130px; /* envelope menor */
+    width: var(--env-w);
+    height: calc(var(--env-w) * 0.6);
+    position:relative; perspective:1000px;
   }
   .envelope .flap{
     position:absolute; inset:0;
-    background:linear-gradient(to bottom, #7a1315, #231f20);
+    background:linear-gradient(180deg,#7a1315,#231f20);
+    clip-path:polygon(0 0,100% 0,50% 100%);
     transform-origin:top;
-    transition:transform 1.2s ease-in-out;
-    z-index:2;
+    transition:transform 1s cubic-bezier(.22,.61,.36,1);
+    z-index:2; border-radius:8px 8px 6px 6px;
   }
   .envelope.open .flap{ transform:rotateX(180deg); }
 
   .envelope .inner{
     position:absolute; inset:0;
-    background:#fff;
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
-    color:#333; font-weight:500;
-    backface-visibility:hidden;
-    z-index:1;
+    background:#fff; border-radius:8px;
+    display:flex; align-items:center; justify-content:center;
+    color:#333; font-weight:600; font-size:.8rem;
+    backface-visibility:hidden; z-index:1;
+    box-shadow:0 6px 14px rgba(0,0,0,.10);
   }
 
   .envelope .seal{
-    position:absolute;
-    top:50%; left:50%;
-    transform:translate(-50%,-50%);
-    width:80px; height:80px;
-    background:radial-gradient(circle at 30% 30%, #7a1315, #231f20);
-    border-radius:50%;
-    display:flex; align-items:center; justify-content:center;
-    opacity:0; scale:0;
-    transition:opacity .4s ease, scale .4s ease;
-    z-index:3;
+    position:absolute; top:50%; left:50%;
+    transform:translate(-50%,-50%) scale(.55);
+    width:56px; height:56px; border-radius:50%;
+    background:radial-gradient(circle at 30% 30%, #fff, #eee);
+    display:grid; place-items:center;
+    opacity:0; transition:opacity .5s 1s ease, transform .5s 1s ease;
+    z-index:3; border:2px solid #d0d0d0;
+    box-shadow:0 0 10px rgba(0,0,0,.08);
   }
-  .envelope.open .seal{ opacity:1; scale:1; transition-delay:1.4s; }
+  .envelope.open .seal{ opacity:1; transform:translate(-50%,-50%) scale(1); }
 
   .envelope .seal img{
-    width:46px; height:46px; border-radius:50%; object-fit:contain;
+    width:34px; height:34px; object-fit:contain;
+    filter:drop-shadow(0 1px 2px rgba(0,0,0,.15));
   }
 
   .envelope .msg-final{
-    position:absolute;
-    bottom:-80px; left:0; right:0;
-    text-align:center;
-    opacity:0; transform:translateY(10px);
-    transition:opacity .5s ease .2s, transform .5s ease .2s;
+    position:absolute; left:0; right:0; bottom:-38px;
+    text-align:center; opacity:0; transform:translateY(8px);
+    transition:opacity .45s .2s ease, transform .45s .2s ease;
+    font-weight:700;
   }
-  .envelope.open .msg-final{
-    opacity:1; transform:translateY(0);
-  }
+  .envelope.open .msg-final{ opacity:1; transform:translateY(0); }
 
-  .btn-small{
-    background:#231f20; color:#fff; padding:8px 14px; border-radius:8px;
-    display:inline-block; text-decoration:none; font-size:.9rem;
-    margin-top:8px;
+  /* ✈️ decolagem do envelope */
+  .envelope.takeoff{
+    animation: takeoff 1.3s cubic-bezier(.22,.61,.36,1) forwards;
+    animation-delay: 1.3s;
+    will-change: transform, opacity, filter;
   }
-  .btn-small:hover{background:#000;}
+  @keyframes takeoff{
+    0%{ transform:translate(0,0) scale(1) rotate(0deg); opacity:1; filter:drop-shadow(0 6px 14px rgba(0,0,0,.15)); }
+    60%{ transform:translate(60px,-90px) scale(.9) rotate(-10deg); filter:drop-shadow(0 10px 20px rgba(0,0,0,.18)); }
+    100%{ transform:translate(120px,-180px) scale(.85) rotate(-14deg); opacity:0; filter:drop-shadow(0 12px 26px rgba(0,0,0,.22)); }
+  }
+  .envelope.takeoff::after{
+    content:""; position:absolute; left:15%; bottom:-8px;
+    width:10px; height:10px; border-radius:50%;
+    background: radial-gradient(#ffffff, rgba(255,255,255,0));
+    box-shadow:
+      0 0 12px rgba(255,255,255,.9),
+      -8px 10px 0 2px rgba(255,255,255,.25),
+      -16px 18px 0 4px rgba(255,255,255,.18),
+      -24px 28px 0 6px rgba(255,255,255,.10);
+    opacity:.85;
+  }
+  @media (prefers-reduced-motion: reduce){
+    .envelope.takeoff{ animation:none; opacity:1; transform:none; }
+    .envelope.takeoff::after{ display:none; }
+  }
 </style>
 {% endblock %}
 
 {% block content %}
-  <div class="pill">✅ Presença confirmada</div>
-  <h1>Presença confirmada, aproveite o evento</h1>
-  <p class="muted">Registro feito para a matrícula <span class="mono">{{ code }}</span>.</p>
+  <!-- Pill com símbolo do Programa de Multiplicadores -->
+  <div class="pill">
+    <img class="logo" src="{{ url_for('static', filename='img/multiplicadores_logo.png') }}"
+         alt="Programa de Multiplicadores">
+    <span>Programa Multiplicadores Ademicon</span>
+  </div>
 
-  <!-- Envelope animado -->
-  <div class="envelope-container">
+  <h1 class="title">Estamos muito felizes em contar com a sua presença neste encontro!</h1>
+  <p class="subtitle">Matrícula <span class="mono">{{ code }}</span> confirmada com sucesso.</p>
+
+  <!-- Envelope menor e animado -->
+  <div class="envelope-stage">
     <div id="envelope" class="envelope">
       <div class="flap"></div>
-      <div class="inner">
-        <p>Confirmando presença...</p>
-      </div>
+      <div class="inner"></div>
+
       <div class="seal">
-        <img src="{{ LOGO_URL or url_for('static', filename='logo.png') }}" alt="Logo ADEMICON" />
-      </div>
-      <div class="msg-final">
-        <p class="text-lg font-semibold text-gray-700 mt-8">Presença registrada!</p>
-        <a href="{{ url_for('presenca.presenca_page') }}" class="btn-small">Nova consulta</a>
+        <img src="{{ url_for('static', filename='img/ademicon_logo.png') }}" alt="Logo Ademicon">
       </div>
     </div>
   </div>
 
-  <div class="wrap mt">
-    <div class="card">
-      <h3>Detalhes</h3>
-      <p class="muted">Se precisar, você pode registrar novamente amanhã.</p>
-      <a class="btn mt" href="{{ url_for('presenca.presenca_page') }}">Voltar</a>
-    </div>
-
-    <div class="card" style="display:flex;align-items:center;justify-content:center;">
-      <div style="font-size:64px;line-height:1">🎉</div>
-    </div>
+  <div class="center mt">
+    <h3>🎉 Multiplicador, sua presença foi confirmada!</h3>
+    <p class="muted">
+      ✨ Que este momento inspire novas conquistas e fortaleça nossa jornada juntos!
+    </p>
   </div>
-
-  <div class="grid mt">
-    <div class="card">
-      <h3>🎉 Multiplicador, sua presença foi confirmada!</h3>
-      <p class="muted">Aproveite nosso evento! ✨ Multiplicadores que brilham, inspiram!<br/>
-        Com carinho, Programa de Multiplicadores.</p>
-    </div>
-  </div>
-
-  <a class="btn mt" href="{{ url_for('presenca.presenca_page') }}">Registrar outra presença</a>
-
-  <p class="credit">
-    desenvolvido por <b>a.strapacon</b> — em caso de dúvidas, contate
-    <a href="mailto:anne.strapacon@ademicon.com.br">anne.strapacon@ademicon.com.br</a>
-  </p>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  // Simula o "click" que dispara a animação de abrir o envelope
   document.addEventListener('DOMContentLoaded', () => {
     const envelope = document.getElementById('envelope');
-    setTimeout(() => envelope.classList.add('open'), 500);
+    setTimeout(() => envelope.classList.add('open'), 400);     // abre
+    setTimeout(() => {
+      const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (!prefersReduced) envelope.classList.add('takeoff');  // voa
+    }, 1250);
   });
 </script>
 {% endblock %}

@@ -4,43 +4,94 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{% block title %}App{% endblock %}</title>
+
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
 
   <style>
-    :root{
-      --ok:#7a1315; --ok-hover:#6a1012;
-      --bg:#f7f7f7; --card:#ffffff; --line:#d9d9d9; --text:#231f20;
+    :root {
+      --ok:#7a1315;
+      --ok-hover:#6a1012;
+      --bg:#f7f7f7;
+      --card:#ffffff;
+      --line:#d9d9d9;
+      --text:#231f20;
     }
-    body{
-      margin:0; color:var(--text);
+
+    body {
+      margin:0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
+      color: var(--text);
       background: radial-gradient(1200px 400px at 50% -10%, #ffffff, #fafafa 35%, #f5f5f5 60%, #f1f1f1);
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
     }
-    .wrap{
-      min-height: calc(100dvh - 4rem);
-      display:grid; grid-template-columns:72px 1fr; gap:24px;
-      align-items:center; justify-items:center; padding:2rem 1rem;
+
+    /* Área principal (card + sidebar decorativa) */
+    .wrap {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 72px 1fr;
+      gap: 24px;
+      align-items: center;
+      justify-items: center;
+      padding: 2rem 1rem;
     }
-    .rail{ display:flex; flex-direction:column; gap:28px; align-items:center; justify-content:center; }
-    .rail .ico{ width:42px; height:42px; display:grid; place-items:center; border-radius:12px; color:var(--ok); filter:drop-shadow(0 2px 6px rgba(0,0,0,.06)); }
-    .card{
-      width:min(640px, 92vw);
-      background:var(--card);
-      border-radius:20px;
-      box-shadow:0 30px 60px rgba(0,0,0,.08), 0 10px 20px rgba(0,0,0,.05);
-      padding:42px 36px 48px;
+
+    .rail {
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+      align-items: center;
+      justify-content: center;
     }
-    .credit{
-      margin-top:32px; text-align:center; font-size:.85rem; color:#818181;
+    .rail .ico {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      color: var(--ok);
+      filter: drop-shadow(0 2px 6px rgba(0,0,0,.06));
     }
-    .credit a{ color:var(--ok); text-decoration:none; font-weight:600; }
-    .credit a:hover{ text-decoration:underline; }
-    @media (max-width:760px){ .wrap{ grid-template-columns:1fr; } .rail{ display:none; } }
+
+    .card {
+      width: min(640px, 92vw);
+      background: var(--card);
+      border-radius: 20px;
+      box-shadow: 0 30px 60px rgba(0,0,0,.08), 0 10px 20px rgba(0,0,0,.05);
+      padding: 42px 36px 48px;
+      border: 1px solid var(--line);
+    }
+
+    /* Rodapé fora do card */
+    footer.credit {
+      text-align: center;
+      font-size: .85rem;
+      color: #818181;
+      padding: 16px 8px 24px;
+      border-top: 1px solid #ddd;
+    }
+    footer.credit a {
+      color: var(--ok);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    footer.credit a:hover {
+      text-decoration: underline;
+    }
+
+    @media (max-width:760px){
+      .wrap{ grid-template-columns:1fr; }
+      .rail{ display:none; }
+    }
   </style>
 
   {% block head_extra %}{% endblock %}
 </head>
+
 <body>
+  <!-- Conteúdo principal -->
   <div class="wrap">
     <aside class="rail" aria-hidden="true">
       <div class="ico"><i class="fa-solid fa-plane-departure"></i></div>
@@ -52,12 +103,14 @@
 
     <section class="card">
       {% block content %}{% endblock %}
-      <p class="credit">
-        desenvolvido por <b>a.strapacon</b> — em caso de dúvidas, contate
-        <a href="mailto:anne.strapacon@ademicon.com.br">anne.strapacon@ademicon.com.br</a>
-      </p>
     </section>
   </div>
+
+  <!-- Rodapé global fora do card -->
+  <footer class="credit">
+    desenvolvido por <b>a.strapacon</b> — em caso de dúvidas, contate
+    <a href="mailto:anne.strapacon@ademicon.com.br">anne.strapacon@ademicon.com.br</a>
+  </footer>
 
   {% block scripts %}{% endblock %}
 </body>
