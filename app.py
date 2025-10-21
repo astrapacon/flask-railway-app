@@ -10,23 +10,72 @@ from werkzeug.exceptions import HTTPException
 # -----------------------------------------------------------------------------
 # DB (SQLAlchemy inicializado em models.py)
 # -----------------------------------------------------------------------------
-from models import db
+from models import db  # onde você definiu: db = SQLAlchemy()
+from flask_migrate import Migrate
 
-# -----------------------------------------------------------------------------
-# Blueprints — garanta que esses módulos existem
-# -----------------------------------------------------------------------------
-from modules.auth.routes import auth_bp
-from modules.matricula.routes import matricula_bp
-from modules.workato.routes import workato_bp
-from modules.presenca.routes import presenca_bp
-
-# -----------------------------------------------------------------------------
-# CORS (opcional). Se não estiver instalado, segue sem erro.
-# -----------------------------------------------------------------------------
+# CORS (opcional)
 try:
     from flask_cors import CORS
 except Exception:
     CORS = None
+
+# Migrate em modo "factory": instancia global e inicializa no create_app()
+migrate = Migrate()
+
+
+def _normalize_database_url(url: str) -> str:
+    """
+    Railway/Heroku às vezes expõem 'postgres://...' (formato legado).
+    SQLAlchemy espera 'postgresql://...'.
+    """
+    if url and url.startswith("postgres://"):
+        return "postgresql://" + url[len("postgres://"):]
+    return url
+
+
+def _ensure_birth_date_column(app: Flask):
+    """
+    Hotfix idempotente para garantir a coluna 'birth_date' em produção.
+    - Em SQLite: usa PRAGMA table_info + ALTER TABLE ADD COLUMN
+    - Em PostgreSQL: usa ALTER TABLE ... ADD COLUMN IF NOT EXISTS
+    - Em outros dialetos, tenta um caminho seguro e ignora falhas silenciosamente
+    """
+    from sqlalchemy import text
+
+    with app.app_context():
+        try:
+            engine_name = db.engine.name  # 'sqlite', 'postgresql', etc.
+
+            if engine_name == "sqlite":
+                cols = db.session.execute(text("PRAGMA table_info(matriculas)")).fetchall()
+                names = {c[1] for c in cols}  # (cid, name, type, notnull, dflt_value, pk)
+                if "birth_date" not in names:
+                    db.session.execute(text("ALTER TABLE matriculas ADD COLUMN birth_date TEXT"))
+                    db.session.commit()
+                    print("[INIT] (sqlite) Coluna birth_date criada em matriculas.")
+                else:
+                    print("[INIT] (sqlite) Coluna birth_date já existe.")
+
+            elif engine_name == "postgresql":
+                # VARCHAR padrão aqui; ajuste para DATE se seu modelo usar db.Date
+                db.session.execute(
+                    text("ALTER TABLE matriculas ADD COLUMN IF NOT EXISTS birth_date VARCHAR")
+                )
+                db.session.commit()
+                print("[INIT] (postgresql) Garantida coluna birth_date em matriculas.")
+
+            else:
+                # Tentativa genérica
+                try:
+                    db.session.execute(text("ALTER TABLE matriculas ADD COLUMN birth_date TEXT"))
+                    db.session.commit()
+                    print(f"[INIT] ({engine_name}) birth_date adicionada (best-effort).")
+                except Exception as e_inner:
+                    print(f"[INIT] ({engine_name}) Ignorando criação de birth_date: {e_inner}")
+
+        except Exception as e:
+            # Não quebra o boot do app por causa do hotfix
+            print(f"[INIT] Aviso ao garantir coluna birth_date: {e}")
 
 
 # -----------------------------------------------------------------------------
@@ -39,6 +88,9 @@ def create_app() -> Flask:
     # =========================================================================
     # Configurações BASE (com defaults seguros para dev)
     # =========================================================================
+    database_url = os.getenv("DATABASE_URL", "sqlite:///local.db")
+    database_url = _normalize_database_url(database_url)
+
     app.config.update(
         # Segurança
         SECRET_KEY=os.getenv("SECRET_KEY", "dev-secret-change-me"),
@@ -50,7 +102,7 @@ def create_app() -> Flask:
         MATRICULA_SALT=os.getenv("MATRICULA_SALT", "salt-fixo-para-matricula"),
 
         # Banco — Railway fornece DATABASE_URL (Postgres). Local usa SQLite.
-        SQLALCHEMY_DATABASE_URI=os.getenv("DATABASE_URL", "sqlite:///local.db"),
+        SQLALCHEMY_DATABASE_URI=database_url,
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
 
         # JSON
@@ -74,9 +126,15 @@ def create_app() -> Flask:
     )
 
     # =========================================================================
-    # Inicializa o Banco de Dados
+    # Inicializa o Banco de Dados e Migrations
     # =========================================================================
     db.init_app(app)
+    migrate.init_app(app, db)
+
+    # =========================================================================
+    # Hotfix: garantir coluna 'birth_date' em prod (idempotente)
+    # =========================================================================
+    _ensure_birth_date_column(app)
 
     # =========================================================================
     # CORS opcional — habilite amplo em dev; restrinja em prod
@@ -85,8 +143,13 @@ def create_app() -> Flask:
         CORS(app, resources={r"/*": {"origins": app.config["CORS_ORIGINS"]}})
 
     # =========================================================================
-    # Registro dos Blueprints
+    # Registro dos Blueprints (import tardio para evitar circularidades)
     # =========================================================================
+    from modules.auth.routes import auth_bp
+    from modules.matricula.routes import matricula_bp
+    from modules.workato.routes import workato_bp
+    from modules.presenca.routes import presenca_bp
+
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(matricula_bp, url_prefix="/matricula")
     app.register_blueprint(workato_bp, url_prefix="/workato")
@@ -106,15 +169,14 @@ def create_app() -> Flask:
         return jsonify(ready=True), 200
 
     # =========================================================================
-    # ROTA DE DEBUG: Mapa de rotas (substitui /__routes)
+    # ROTA DE DEBUG: Mapa de rotas
     # =========================================================================
     @app.get("/debug/routes")
     def routes_map():
         """Exibe todas as rotas da aplicação como JSON (útil para diagnóstico)"""
         routes = []
         for rule in app.url_map.iter_rules():
-            # Exclui a rota padrão de arquivos estáticos e HEAD/OPTIONS
-            if rule.endpoint != "static":
+            if rule.endpoint != "static":  # ignora arquivos estáticos
                 routes.append({
                     "path": str(rule),
                     "methods": sorted([m for m in rule.methods if m not in ("HEAD", "OPTIONS")]),
@@ -122,15 +184,13 @@ def create_app() -> Flask:
                 })
         return jsonify({"count": len(routes), "routes": routes})
 
-
     # Favicon básico (evita 404 do navegador). Coloque um favicon em ./static se quiser.
     @app.get("/favicon.ico")
     def favicon():
         static_dir = os.path.join(app.root_path, "static")
         if os.path.exists(os.path.join(static_dir, "favicon.ico")):
             return send_from_directory(static_dir, "favicon.ico")
-        # 204 = No Content (sem erro no log)
-        return ("", 204)
+        return ("", 204)  # No Content
 
     # =========================================================================
     # Handlers de erro — respostas padronizadas em JSON
