@@ -1,86 +1,135 @@
 # modules/presenca/routes.py
-import re
-import io
 import csv
+import io
+import re
 import datetime as dt
+from typing import Optional
+
 from flask import Blueprint, request, jsonify, Response, render_template
+from sqlalchemy.exc import IntegrityError
+
 from models import db, Matricula, Presenca
 
-presenca_bp = Blueprint("presenca", __name__)  # adicione url_prefix="/presenca" se quiser
+# -------------------------------------------------------------------
+# Blueprint com prefixo /presenca
+# -------------------------------------------------------------------
+presenca_bp = Blueprint("presenca", __name__, url_prefix="/presenca")
 
-FORMAT = re.compile(r"^MR\d{5}$")  # padrão MR + 5 dígitos
+# padrão MR + 5 dígitos (ex.: MR25684)
+FORMAT = re.compile(r"^MR\d{5}$")
 
-# ------------------ PÁGINA (form + confirmação) ------------------
+
+# ===================== Helpers =====================
+
+def _today_utc() -> dt.date:
+    """Retorna a data (UTC) para controle de presença diária."""
+    return dt.datetime.utcnow().date()
+
+def _utcnow() -> dt.datetime:
+    return dt.datetime.utcnow()
+
+def _client_ip() -> Optional[str]:
+    """Extrai o IP real do cliente (considera X-Forwarded-For)."""
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        # XFF pode vir como 'ip1, ip2, ip3' — o primeiro é o cliente
+        return xff.split(",")[0].strip()
+    return request.remote_addr
+
+def _json_error(message: str, status_code: int = 200):
+    """Convenção de erro padrão."""
+    return jsonify(ok=False, message=message), status_code
+
+
+# ===================== PÁGINAS (HTML) =====================
+
 @presenca_bp.get("/")
 def presenca_page():
     """
-    GET /?matricula=MR12345
-    - sem query: mostra formulário
-    - com query: valida e registra presença (se ainda não houver no dia)
+    Entrega o formulário. A interação é via fetch (JS no template).
     """
-    code = (request.args.get("matricula") or "").strip().upper()
-    tried = bool(code)
-    today = dt.datetime.utcnow().date()
+    return render_template("presenca_form.html")
 
-    if not tried:
-        return render_template("presenca_form.html", tried=False)
 
-    # valida formato
+@presenca_bp.get("/sucesso")
+def sucesso():
+    """
+    Renderiza a página de sucesso com animações.
+    Uso: /presenca/sucesso?code=MR25684
+    """
+    code = (request.args.get("code") or "").strip().upper()
+    return render_template("presenca_success.html", code=code)
+
+
+# ===================== APIs JSON (usadas pelo fetch) =====================
+
+@presenca_bp.post("/api/check")
+def api_check():
+    """
+    Verifica se a matrícula existe e está ativa.
+    Corpo: { "matricula": "MR25684" }
+    """
+    data = request.get_json(silent=True) or {}
+    code = (data.get("matricula") or "").strip().upper()
+
+    if not code:
+        return _json_error("Informe a matrícula.", 400)
     if not FORMAT.fullmatch(code):
-        return render_template(
-            "presenca_form.html",
-            tried=True,
-            ok=False,
-            msg="Formato inválido. Use MR + 5 dígitos (ex: MR25684).",
-            matricula=code
-        )
+        return _json_error("Formato inválido (MR + 5 dígitos).")
 
-    # busca matrícula
     m = Matricula.query.filter_by(code=code).first()
     if not m:
-        return render_template(
-            "presenca_form.html",
-            tried=True,
-            ok=False,
-            msg="Matrícula não encontrada.",
-            matricula=code
-        )
+        return _json_error("Matrícula não encontrada.")
+    if getattr(m, "status", "active") != "active":
+        return _json_error(f"Matrícula inativa (status: {m.status}).")
 
-    # defensivo
-    status = getattr(m, "status", "active")
-    if status != "active":
-        return render_template(
-            "presenca_form.html",
-            tried=True,
-            ok=False,
-            msg=f"Matrícula inativa (status: {status}).",
-            matricula=code
-        )
+    return jsonify(ok=True, code=code), 200
 
-    # verifica presença já existente no dia
-    existing = Presenca.query.filter_by(matricula_id=m.id, date_key=today).first()
-    if existing:
-        # já confirmada hoje → página de sucesso
-        return render_template("presenca_success.html", code=m.code), 200
 
-    # registra nova presença
+@presenca_bp.post("/api/registrar")
+def api_registrar():
+    """
+    Registra presença 1x por dia (controle por (matricula_id, date_key)).
+    Corpo: { "matricula": "MR25684" }
+    """
+    data = request.get_json(silent=True) or {}
+    code = (data.get("matricula") or "").strip().upper()
+
+    if not FORMAT.fullmatch(code):
+        return _json_error("Formato inválido (MR + 5 dígitos).")
+
+    m = Matricula.query.filter_by(code=code).first()
+    if not m or getattr(m, "status", "active") != "active":
+        return _json_error("Matrícula inválida ou inativa.")
+
+    today = _today_utc()
     p = Presenca(
         matricula_id=m.id,
         date_key=today,
-        timestamp=dt.datetime.utcnow(),
-        ip=request.headers.get("X-Forwarded-For", request.remote_addr),
+        timestamp=_utcnow(),
+        ip=_client_ip(),
         user_agent=(request.user_agent.string or "")[:300],
-        source="link"
+        source="web",
     )
+
     db.session.add(p)
-    db.session.commit()
+    try:
+        db.session.commit()
+        return jsonify(ok=True, already=False, id=p.id, code=code), 200
+    except IntegrityError:
+        # Já existe presença para (matricula_id, date_key)
+        db.session.rollback()
+        return jsonify(ok=True, already=True, code=code, message="Presença já registrada hoje."), 200
 
-    return render_template("presenca_success.html", code=m.code), 200
 
+# ===================== API GET opcional (idempotente) =====================
 
-# ------------------ API JSON ------------------
 @presenca_bp.get("/api")
-def presenca_api():
+def presenca_api_get():
+    """
+    Variante GET para integrações simples: /presenca/api?matricula=MR25684
+    Idempotente por dia (via UniqueConstraint no modelo).
+    """
     code = (request.args.get("matricula") or "").strip().upper()
     if not FORMAT.fullmatch(code):
         return jsonify({"ok": False, "msg": "Formato inválido"}), 400
@@ -88,31 +137,35 @@ def presenca_api():
     m = Matricula.query.filter_by(code=code).first()
     if not m:
         return jsonify({"ok": False, "msg": "Matrícula não encontrada"}), 404
+    if getattr(m, "status", "active") != "active":
+        return jsonify({"ok": False, "msg": f"Matrícula inativa (status: {m.status})."}), 200
 
-    today = dt.datetime.utcnow().date()
-    existing = Presenca.query.filter_by(matricula_id=m.id, date_key=today).first()
-    if existing:
-        return jsonify({"ok": True, "already": True, "code": m.code}), 200
-
+    today = _today_utc()
     p = Presenca(
         matricula_id=m.id,
         date_key=today,
-        timestamp=dt.datetime.utcnow(),
-        ip=request.headers.get("X-Forwarded-For", request.remote_addr),
+        timestamp=_utcnow(),
+        ip=_client_ip(),
         user_agent=(request.user_agent.string or "")[:300],
-        source="api"
+        source="api",
     )
     db.session.add(p)
-    db.session.commit()
-    return jsonify({"ok": True, "already": False, "code": m.code}), 200
-
-
-# ------------------ EXPORTS (CSV e JSON) ------------------
-def _parse_date(s):
     try:
-        return None if not s else __import__("datetime").date.fromisoformat(s)
+        db.session.commit()
+        return jsonify({"ok": True, "already": False, "code": m.code}), 200
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"ok": True, "already": True, "code": m.code}), 200
+
+
+# ===================== EXPORTS (CSV e JSON) =====================
+
+def _parse_date(s: Optional[str]) -> Optional[dt.date]:
+    try:
+        return None if not s else dt.date.fromisoformat(s)
     except Exception:
         return None
+
 
 @presenca_bp.get("/export.csv")
 def export_presencas_csv():
@@ -134,7 +187,7 @@ def export_presencas_csv():
         Matricula.cpf,
         Matricula.status,
         Presenca.ip,
-        Presenca.source
+        Presenca.source,
     ).join(Matricula, Matricula.id == Presenca.matricula_id)
 
     if start:
@@ -149,12 +202,18 @@ def export_presencas_csv():
 
     output = io.StringIO(newline="")
     writer = csv.writer(output)
-    writer.writerow(["id","date_key","timestamp_utc","code","holder_name","cpf","status","ip","source"])
+    writer.writerow(["id", "date_key", "timestamp_utc", "code", "holder_name", "cpf", "status", "ip", "source"])
     for r in rows:
         writer.writerow([
-            r.id, r.date_key, r.timestamp.isoformat(),
-            r.code, r.holder_name or "", r.cpf or "",
-            r.status, r.ip or "", r.source or ""
+            r.id,
+            r.date_key.isoformat(),
+            r.timestamp.isoformat(),
+            r.code,
+            r.holder_name or "",
+            r.cpf or "",
+            r.status,
+            r.ip or "",
+            r.source or "",
         ])
 
     resp = Response(output.getvalue(), mimetype="text/csv; charset=utf-8")
@@ -165,7 +224,7 @@ def export_presencas_csv():
 @presenca_bp.get("/export.json")
 def export_presencas_json():
     """
-    Exporta presenças em JSON, com os mesmos filtros.
+    Exporta presenças em JSON (mesmos filtros de export.csv).
     """
     start = _parse_date(request.args.get("start"))
     end   = _parse_date(request.args.get("end"))
@@ -180,7 +239,7 @@ def export_presencas_json():
         Matricula.cpf,
         Matricula.status,
         Presenca.ip,
-        Presenca.source
+        Presenca.source,
     ).join(Matricula, Matricula.id == Presenca.matricula_id)
 
     if start:
@@ -202,7 +261,7 @@ def export_presencas_json():
         "cpf": r.cpf,
         "status": r.status,
         "ip": r.ip,
-        "source": r.source
+        "source": r.source,
     } for r in rows]
 
     return jsonify({"count": len(data), "items": data}), 200

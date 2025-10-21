@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Presença confirmada{% endblock %}
+
+{% block head_extra %}
+<style>
+  .pill{display:inline-block;padding:6px 10px;border:1px solid var(--line);border-radius:999px;font-weight:700;opacity:.9}
+  .muted{color:#666}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+  .mt{margin-top:16px}
+  .btn{display:inline-block;margin-top:18px;padding:12px 16px;background:var(--ok);color:#fff;border-radius:12px;text-decoration:none;font-weight:800}
+  .btn:hover{background:var(--ok-hover)}
+
+  /* envelope */
+  .env-stage{display:grid;place-items:center;margin:28px auto;}
+  .envelope{position:relative;width:300px;height:180px;perspective:1000px;}
+  .env-body{position:absolute;inset:0;border-radius:12px;background:linear-gradient(180deg,#fff,#f5f5f5);box-shadow:0 8px 24px rgba(0,0,0,.12);}
+  .env-flap{position:absolute;top:0;left:0;right:0;height:60%;background:linear-gradient(180deg,#7a1315,#6a1012);clip-path:polygon(0 0,100% 0,50% 100%);transform-origin:top;transition:transform 1s cubic-bezier(.22,.61,.36,1);}
+  .envelope.open .env-flap{transform:rotateX(180deg);}
+  .env-seal{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(0.6);width:80px;height:80px;border-radius:50%;background:radial-gradient(circle,#7a1315,#231f20);display:grid;place-items:center;opacity:0;transition:all .6s 1s ease-out;}
+  .envelope.open .env-seal{opacity:1;transform:translate(-50%,-50%) scale(1);}
+  .env-seal img{width:46px;height:46px;border-radius:50%;object-fit:contain;}
+</style>
+{% endblock %}
+
+{% block content %}
+  <div class="pill">✅ Presença confirmada</div>
+  <h1>Presença confirmada, aproveite o evento</h1>
+  <p class="muted">Registro feito para a matrícula <span class="mono">{{ code }}</span>.</p>
+
+  <div class="env-stage">
+    <div id="envelope" class="envelope">
+      <div class="env-body"></div>
+      <div class="env-flap"></div>
+      <div class="env-seal">
+        <img src="{{ LOGO_URL or url_for('static', filename='logo.png') }}" alt="Logo">
+      </div>
+    </div>
+  </div>
+
+  <div class="mt" style="text-align:center">
+    <h3>🎉 Multiplicador, sua presença foi confirmada!</h3>
+    <p class="muted">Aproveite nosso evento! ✨ Multiplicadores que brilham, inspiram!<br/>
+    Com carinho, Programa de Multiplicadores.</p>
+    <a class="btn mt" href="{{ url_for('presenca.presenca_page') }}">Registrar outra presença</a>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded',()=>{
+    const env=document.getElementById('envelope');
+    setTimeout(()=>env.classList.add('open'),500);
+  });
+</script>
+{% endblock %}

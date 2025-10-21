@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block title %}Esqueci minha matrícula{% endblock %}
+
+{% block head_extra %}
+<style>
+  /* utilitários (remova se já existir na base) */
+  .title{ font-size:24px; font-weight:800; margin:0 0 4px; color:var(--text); }
+  .muted{ color:#666; }
+  .grid{ display:grid; grid-template-columns:1fr; gap:14px; margin-top:20px; }
+  .field{ display:flex; flex-direction:column; gap:6px; }
+  .inp{
+    height:54px; border:2px solid var(--ok); border-radius:12px;
+    padding:0 14px; font-size:18px; letter-spacing:.4px;
+    background:#f7f7f7; color:var(--text);
+  }
+  .alert{ margin-top:18px; padding:14px 16px; border-radius:12px; }
+  .alert--err{ border:2px solid #7a1315; background:#fde8e8; color:#7a1315; }
+  .alert--ok{ border:2px solid #137333; background:#e6f4ea; color:#0f5f2a; }
+  .code-badge{
+    display:inline-block; margin-top:10px; padding:8px 14px;
+    border:2px dashed var(--ok); border-radius:10px; font-weight:800; letter-spacing:.5px;
+    font-family:ui-monospace,Menlo,Consolas,monospace;
+  }
+  .mt{ margin-top:16px; }
+
+  /* --- Botão animado: normal -> loading -> success(check) / error --- */
+  .btn{
+    height:54px; border:none; border-radius:12px; background:var(--ok); color:#fff;
+    font-weight:800; cursor:pointer; font-size:17px;
+  }
+  .btn:hover{ background:var(--ok-hover); }
+
+  .btn-anim{
+    position:relative; display:inline-grid; place-items:center; gap:8px;
+    min-width:220px; height:54px; padding:0 18px; border:none; border-radius:12px;
+    background:var(--ok); color:#fff; font-weight:800; cursor:pointer; font-size:17px;
+    transition: background .2s ease, transform .06s ease, width .25s ease, border-radius .25s ease;
+    overflow:hidden;
+  }
+  .btn-anim:hover{ background:var(--ok-hover); }
+  .btn-anim:active{ transform:translateY(1px); }
+  .btn-anim .label{ pointer-events:none; }
+
+  .btn-anim .spinner{
+    position:absolute; width:22px; height:22px;
+    border:3px solid rgba(255,255,255,.35); border-top-color:#fff; border-radius:50%;
+    opacity:0; transform:scale(.6); transition:opacity .15s ease;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  .btn-anim .check{
+    position:absolute; width:28px; height:28px; opacity:0;
+    stroke:#fff; fill:none; stroke-width:3; stroke-linecap:round; stroke-linejoin:round;
+    stroke-dasharray:30; stroke-dashoffset:30; transition:opacity .15s ease;
+  }
+  @keyframes draw{ to{ stroke-dashoffset:0; } }
+
+  /* loading */
+  .btn-anim.is-loading{ cursor:default; }
+  .btn-anim.is-loading .label{ opacity:0; }
+  .btn-anim.is-loading .spinner{ opacity:1; animation:spin .8s linear infinite; }
+
+  /* success */
+  .btn-anim.is-success{ background:#137333; border-radius:999px; }
+  .btn-anim.is-success .label{ opacity:0; }
+  .btn-anim.is-success .spinner{ opacity:0; animation:none; }
+  .btn-anim.is-success .check{ opacity:1; animation:draw .6s ease forwards; }
+
+  /* error (shake sutil) */
+  .btn-anim.is-error{ background:#7a1315; animation:shake .32s ease; }
+  @keyframes shake{
+    10%,90%{ transform:translateX(-1px); }
+    20%,80%{ transform:translateX(2px); }
+    30%,50%,70%{ transform:translateX(-4px); }
+    40%,60%{ transform:translateX(4px); }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div>
+  <div class="pill">Recuperar matrícula</div>
+  <h1 class="title">Multiplicador, esqueceu sua matrícula?</h1>
+  <p class="muted">
+    Informe seu <b>CPF</b> e sua <b>data de nascimento</b> para lembrarmos sua matrícula.
+  </p>
+
+  <form id="f-lembrar" class="grid" autocomplete="off">
+    <div class="field">
+      <label for="cpf">CPF</label>
+      <input id="cpf" name="cpf" class="inp" placeholder="000.000.000-00" inputmode="numeric">
+    </div>
+
+    <div class="field">
+      <label for="birth_date">Data de Nascimento</label>
+      <input id="birth_date" name="birth_date" class="inp" placeholder="DD/MM/AAAA" inputmode="numeric">
+    </div>
+
+    <button id="btn-lembrar" class="btn-anim" type="submit" aria-live="polite">
+      <span class="label">Lembrar matrícula</span>
+      <span class="spinner" aria-hidden="true"></span>
+      <svg class="check" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 12l5 5L20 6"/>
+      </svg>
+    </button>
+  </form>
+
+  <!-- Mensagens -->
+  <div id="msg" class="alert" style="display:none"></div>
+
+  <div id="okbox" class="alert alert--ok" style="display:none">
+    <div><b>Matrícula localizada!</b></div>
+    <div id="okname" class="muted" style="margin-top:4px"></div>
+    <div id="okcode" class="code-badge"></div>
+    <div style="margin-top:12px">
+      <a class="btn" href="{{ url_for('presenca.presenca_page') }}">Usar matrícula para registrar presença</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function onlyDigits(s){ return (s||"").replace(/\D+/g,""); }
+
+const form   = document.getElementById('f-lembrar');
+const btn    = document.getElementById('btn-lembrar');
+const msg    = document.getElementById('msg');
+const box    = document.getElementById('okbox');
+const nameEl = document.getElementById('okname');
+const codeEl = document.getElementById('okcode');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  msg.style.display = 'none';
+  box.style.display = 'none';
+
+  const cpf   = document.getElementById('cpf').value.trim();
+  const birth = document.getElementById('birth_date').value.trim();
+
+  // estado: carregando
+  btn.classList.remove('is-success','is-error');
+  btn.classList.add('is-loading');
+  btn.setAttribute('disabled','disabled');
+
+  try {
+    const r = await fetch('{{ url_for("matricula.api_lembrar") }}', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ cpf, birth_date: birth })
+    });
+    const data = await r.json();
+
+    if (data.ok) {
+      // sucesso → animar check
+      btn.classList.remove('is-loading');
+      btn.classList.add('is-success');
+
+      nameEl.textContent = data.holder_name ? `Olá, ${data.holder_name}.` : '';
+      codeEl.textContent = data.code;
+      box.style.display = 'block';
+
+      // opcional: voltar ao estado inicial após alguns segundos
+      setTimeout(() => {
+        btn.classList.remove('is-success');
+        btn.removeAttribute('disabled');
+      }, 1800);
+
+    } else {
+      // erro → vibrar e mostrar mensagem
+      btn.classList.remove('is-loading');
+      btn.classList.add('is-error');
+      setTimeout(() => btn.classList.remove('is-error'), 450);
+      btn.removeAttribute('disabled');
+
+      msg.className = 'alert alert--err';
+      msg.textContent = data.message || 'Não encontramos matrícula para os dados informados.';
+      msg.style.display = 'block';
+    }
+  } catch (err) {
+    btn.classList.remove('is-loading');
+    btn.classList.add('is-error');
+    setTimeout(() => btn.classList.remove('is-error'), 450);
+    btn.removeAttribute('disabled');
+
+    msg.className = 'alert alert--err';
+    msg.textContent = 'Falha na consulta. Tente novamente.';
+    msg.style.display = 'block';
+  }
+});
+
+// máscaras de entrada (client-side UX)
+const cpfInp = document.getElementById('cpf');
+cpfInp.addEventListener('input', () => {
+  let v = onlyDigits(cpfInp.value).slice(0,11);
+  if (v.length > 9) cpfInp.value = v.replace(/(\d{3})(\d{3})(\d{3})(\d{0,2})/, "$1.$2.$3-$4");
+  else if (v.length > 6) cpfInp.value = v.replace(/(\d{3})(\d{3})(\d{0,3})/, "$1.$2.$3");
+  else if (v.length > 3) cpfInp.value = v.replace(/(\d{3})(\d{0,3})/, "$1.$2");
+  else cpfInp.value = v;
+});
+
+const bInp = document.getElementById('birth_date');
+bInp.addEventListener('input', () => {
+  let v = onlyDigits(bInp.value).slice(0,8);
+  if (v.length > 4) bInp.value = v.replace(/(\d{2})(\d{2})(\d{0,4})/, "$1/$2/$3");
+  else if (v.length > 2) bInp.value = v.replace(/(\d{2})(\d{0,2})/, "$1/$2");
+  else bInp.value = v;
+});
+</script>
+{% endblock %}

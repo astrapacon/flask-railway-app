@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Consulta de Matrícula{% endblock %}
+
+{% block head_extra %}
+<style>
+  .pill{display:inline-block;padding:6px 10px;border:1px solid var(--line);border-radius:999px;font-weight:700;opacity:.9}
+  .muted{color:#666}
+  .row{display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:12px}
+  input#code{height:52px;border-radius:12px;border:2px solid var(--ok);padding:0 14px;font-size:18px}
+  button{height:52px;border:none;border-radius:12px;background:var(--ok);color:#fff;font-weight:800;padding:0 20px;cursor:pointer}
+  .alert{margin-top:14px;padding:12px 14px;border-radius:12px}
+  .alert--err{border:2px solid #7a1315;background:#fde8e8;color:#7a1315}
+</style>
+{% endblock %}
+
+{% block content %}
+  <div class="pill">Portal - Para consulta de Matrícula dos Multiplicadores</div>
+  <h1>Consultar matrícula</h1>
+  <p class="muted">Informe no formato <b>MR + 5 dígitos</b> (ex.: <b>MR12345</b>).</p>
+
+  <form id="f-consulta" autocomplete="off">
+    <div class="row">
+      <input id="code" name="code" type="text" placeholder="MR12345" />
+      <button type="submit">Consultar</button>
+    </div>
+  </form>
+
+  <div id="alert" class="alert alert--err" style="display:none"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const form = document.getElementById('f-consulta');
+  const input = document.getElementById('code');
+  const alertBox = document.getElementById('alert');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    alertBox.style.display = 'none';
+    const code = (input.value || '').trim().toUpperCase();
+
+    try {
+      const r = await fetch(`{{ url_for('matricula.validate') }}?code=${encodeURIComponent(code)}`);
+      const data = await r.json();
+      if (r.ok && data.valid) {
+        window.location.href = `{{ url_for('matricula.sucesso_page') }}?code=${encodeURIComponent(data.code)}`;
+      } else {
+        alertBox.textContent = (data && data.message) ? data.message : 'Não foi possível validar.';
+        alertBox.style.display = 'block';
+      }
+    } catch (err) {
+      alertBox.textContent = 'Falha na consulta. Tente novamente.';
+      alertBox.style.display = 'block';
+    }
+  });
+</script>
+{% endblock %}

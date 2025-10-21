@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Validação de Matrícula{% endblock %}
+
+{% block head_extra %}
+<style>
+  .field{width:100%; margin-bottom:18px}
+  .field input{width:100%; height:56px; border-radius:12px; border:2px solid var(--ok); outline:none; background:#f7f7f7; color:var(--text); font-size:18px; padding:0 18px;}
+  .btn{width:100%; height:56px; border:none; border-radius:14px; background:linear-gradient(180deg,#d3181c,var(--ok)); color:#fff; font-weight:800; font-size:18px; cursor:pointer; box-shadow:0 10px 22px rgba(211,24,28,.28)}
+  .btn:hover{filter:brightness(.98)}
+  .alert{margin-top:22px; padding:16px 18px; border-radius:14px; display:flex; align-items:center; gap:12px}
+  .alert.ok{ border:2px solid #137333; background:#e6f4ea; color:#0f5f2a }
+  .alert.err{ border:2px solid #7a1315; background:#fde8e8; color:#7a1315 }
+  .badge{width:36px; height:36px; border-radius:50%; display:grid; place-items:center; color:#fff; background:var(--ok)}
+</style>
+{% endblock %}
+
+{% block content %}
+  <form id="form-check" class="field">
+    <input type="text" name="matricula" placeholder="MATRÍCULA" aria-label="Digite a matrícula" />
+    <button class="btn" type="submit">CONFIRMAR</button>
+  </form>
+
+  <div id="alert-ok" class="alert ok hidden" role="status" aria-live="polite">
+    <div class="badge"><i class="fa-solid fa-check"></i></div>
+    <div class="msg">Matrícula válida!</div>
+  </div>
+
+  <div id="alert-err" class="alert err hidden" role="status" aria-live="polite">
+    <div class="badge"><i class="fa-solid fa-xmark"></i></div>
+    <div class="msg">Matrícula inválida.</div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const f = document.getElementById('form-check');
+  const ok = document.getElementById('alert-ok');
+  const err = document.getElementById('alert-err');
+
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    ok.classList.add('hidden');
+    err.classList.add('hidden');
+
+    const formData = new FormData(f);
+    const body = { matricula: formData.get('matricula')?.trim() || '' };
+
+    try {
+      const r = await fetch('{{ url_for("matricula.api_check") }}', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await r.json();
+
+      if (data.ok) {
+        ok.querySelector('.msg').textContent = data.message || 'Matrícula válida!';
+        ok.classList.remove('hidden');
+      } else {
+        err.querySelector('.msg').textContent = data.message || 'Matrícula inválida.';
+        err.classList.remove('hidden');
+      }
+    } catch (e) {
+      err.querySelector('.msg').textContent = 'Falha na verificação. Tente novamente.';
+      err.classList.remove('hidden');
+    }
+  });
+</script>
+{% endblock %}

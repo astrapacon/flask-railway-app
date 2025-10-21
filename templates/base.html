@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}App{% endblock %}</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+
+  <style>
+    :root{
+      --ok:#7a1315; --ok-hover:#6a1012;
+      --bg:#f7f7f7; --card:#ffffff; --line:#d9d9d9; --text:#231f20;
+    }
+    body{
+      margin:0; color:var(--text);
+      background: radial-gradient(1200px 400px at 50% -10%, #ffffff, #fafafa 35%, #f5f5f5 60%, #f1f1f1);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    .wrap{
+      min-height: calc(100dvh - 4rem);
+      display:grid; grid-template-columns:72px 1fr; gap:24px;
+      align-items:center; justify-items:center; padding:2rem 1rem;
+    }
+    .rail{ display:flex; flex-direction:column; gap:28px; align-items:center; justify-content:center; }
+    .rail .ico{ width:42px; height:42px; display:grid; place-items:center; border-radius:12px; color:var(--ok); filter:drop-shadow(0 2px 6px rgba(0,0,0,.06)); }
+    .card{
+      width:min(640px, 92vw);
+      background:var(--card);
+      border-radius:20px;
+      box-shadow:0 30px 60px rgba(0,0,0,.08), 0 10px 20px rgba(0,0,0,.05);
+      padding:42px 36px 48px;
+    }
+    .credit{
+      margin-top:32px; text-align:center; font-size:.85rem; color:#818181;
+    }
+    .credit a{ color:var(--ok); text-decoration:none; font-weight:600; }
+    .credit a:hover{ text-decoration:underline; }
+    @media (max-width:760px){ .wrap{ grid-template-columns:1fr; } .rail{ display:none; } }
+  </style>
+
+  {% block head_extra %}{% endblock %}
+</head>
+<body>
+  <div class="wrap">
+    <aside class="rail" aria-hidden="true">
+      <div class="ico"><i class="fa-solid fa-plane-departure"></i></div>
+      <div class="ico"><i class="fa-solid fa-globe"></i></div>
+      <div class="ico"><i class="fa-solid fa-car"></i></div>
+      <div class="ico"><i class="fa-solid fa-house"></i></div>
+      <div class="ico"><i class="fa-solid fa-graduation-cap"></i></div>
+    </aside>
+
+    <section class="card">
+      {% block content %}{% endblock %}
+      <p class="credit">
+        desenvolvido por <b>a.strapacon</b> — em caso de dúvidas, contate
+        <a href="mailto:anne.strapacon@ademicon.com.br">anne.strapacon@ademicon.com.br</a>
+      </p>
+    </section>
+  </div>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

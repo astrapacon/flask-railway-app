@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Confirmar Presença{% endblock %}
+
+{% block head_extra %}
+<style>
+  h2{text-align:center;margin:0 0 8px;font-size:1.5rem}
+  p.muted{text-align:center;margin:0 0 18px;color:#666}
+
+  .form-wrap{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:16px}
+
+  .inp{
+    width:80%;max-width:360px;height:56px;border:2px solid var(--ok);border-radius:12px;
+    padding:0 14px;font-size:18px;letter-spacing:.5px;background:#f7f7f7;color:var(--text);text-align:center;
+  }
+
+  /* Botão animado (spinner → check) */
+  .btn-anim{
+    position:relative;display:inline-grid;place-items:center;min-width:220px;height:56px;padding:0 18px;
+    border:none;border-radius:12px;background:var(--ok);color:#fff;font-weight:800;font-size:17px;cursor:pointer;
+    transition:background .2s ease, transform .06s ease, border-radius .25s ease;overflow:hidden
+  }
+  .btn-anim:hover{background:var(--ok-hover)}
+  .btn-anim:active{transform:translateY(1px)}
+  .btn-anim .label{pointer-events:none}
+  .btn-anim .spinner{
+    position:absolute;width:22px;height:22px;border:3px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;
+    opacity:0;transform:scale(.6);transition:opacity .15s ease
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .btn-anim .check{
+    position:absolute;width:28px;height:28px;opacity:0;stroke:#fff;fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;
+    stroke-dasharray:30;stroke-dashoffset:30;transition:opacity .15s ease
+  }
+  @keyframes draw{to{stroke-dashoffset:0}}
+  .btn-anim.is-loading .label{opacity:0}
+  .btn-anim.is-loading .spinner{opacity:1;animation:spin .8s linear infinite}
+  .btn-anim.is-success{background:#137333;border-radius:999px}
+  .btn-anim.is-success .label{opacity:0}
+  .btn-anim.is-success .spinner{opacity:0;animation:none}
+  .btn-anim.is-success .check{opacity:1;animation:draw .6s ease forwards}
+  .btn-anim.is-error{background:#7a1315;animation:shake .32s ease}
+  @keyframes shake{10%,90%{transform:translateX(-1px)}20%,80%{transform:translateX(2px)}30%,50%,70%{transform:translateX(-4px)}40%,60%{transform:translateX(4px)}}
+
+  /* Mensagem de erro */
+  .alert{margin-top:12px;padding:12px 14px;border-radius:12px;text-align:center;display:none}
+  .alert--err{border:2px solid #7a1315;background:#fde8e8;color:#7a1315}
+
+  /* CTA “Esqueceu?” */
+  .forgot{margin-top:10px;font-size:.95rem;text-align:center;color:#555}
+  .forgot a{color:var(--ok);text-decoration:none;font-weight:700}
+  .forgot a:hover{text-decoration:underline}
+</style>
+{% endblock %}
+
+{% block content %}
+  <h2>Confirme sua presença</h2>
+  <p class="muted">Informe sua matrícula no formato <b>MR + 5 dígitos</b> (ex.: <b>MR25684</b>).</p>
+
+  <form id="form-presenca" class="form-wrap">
+    <input id="matricula" name="matricula" class="inp" placeholder="MR25684" value="{{ matricula or '' }}" autocomplete="off" />
+    <button id="btn-confirmar" class="btn-anim" type="submit" aria-live="polite">
+      <span class="label">Confirmar Presença</span>
+      <span class="spinner" aria-hidden="true"></span>
+      <svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l5 5L20 6"/></svg>
+    </button>
+    <div id="mensagem" class="alert alert--err"></div>
+  </form>
+
+  <p class="forgot">
+    Multiplicador, esqueceu sua matrícula?
+    <a href="{{ url_for('matricula.consulta') }}">Consulte aqui</a>
+  </p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  const form = document.getElementById('form-presenca');
+  const input = document.getElementById('matricula');
+  const btn = document.getElementById('btn-confirmar');
+  const msg = document.getElementById('mensagem');
+
+  // Pré-preenche com ?matricula=MRxxxxx (se veio da página "lembrar")
+  const url = new URL(window.location.href);
+  const q = (url.searchParams.get('matricula') || '').toUpperCase().trim();
+  if (q) input.value = q;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const code = (input.value || '').trim().toUpperCase();
+
+    msg.style.display = 'none';
+    btn.classList.remove('is-success','is-error');
+    btn.classList.add('is-loading');
+    btn.setAttribute('disabled','disabled');
+
+    try {
+      // 1) checa matrícula
+      const chk = await fetch('{{ url_for("presenca.api_check") }}', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({ matricula: code })
+      });
+      const c = await chk.json();
+      if (!c.ok) throw new Error(c.message || 'Matrícula inválida.');
+
+      // 2) registra presença
+      const reg = await fetch('{{ url_for("presenca.api_registrar") }}', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({ matricula: code })
+      });
+      const r = await reg.json();
+      if (!r.ok) throw new Error(r.message || 'Não foi possível registrar a presença.');
+
+      // Sucesso → anima check e redireciona
+      btn.classList.remove('is-loading');
+      btn.classList.add('is-success');
+
+      setTimeout(() => {
+        window.location.href = '{{ url_for("presenca.sucesso") }}?code=' + encodeURIComponent(code);
+      }, 600);
+
+    } catch (err) {
+      btn.classList.remove('is-loading');
+      btn.classList.add('is-error');
+      setTimeout(() => btn.classList.remove('is-error'), 450);
+      btn.removeAttribute('disabled');
+
+      msg.textContent = err.message || 'Falha na operação.';
+      msg.style.display = 'block';
+    }
+  });
+})();
+</script>
+{% endblock %}

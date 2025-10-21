@@ -105,19 +105,23 @@ def create_app() -> Flask:
         """Verifica se o app está pronto (poderia testar o DB aqui)"""
         return jsonify(ready=True), 200
 
-    # Mapa de rotas para diagnóstico (útil no Railway)
-    @app.get("/__routes")
+    # =========================================================================
+    # ROTA DE DEBUG: Mapa de rotas (substitui /__routes)
+    # =========================================================================
+    @app.get("/debug/routes")
     def routes_map():
+        """Exibe todas as rotas da aplicação como JSON (útil para diagnóstico)"""
         routes = []
         for rule in app.url_map.iter_rules():
-            if rule.endpoint == "static":
-                continue
-            routes.append({
-                "rule": str(rule),
-                "methods": sorted([m for m in rule.methods if m not in ("HEAD", "OPTIONS")]),
-                "endpoint": rule.endpoint,
-            })
+            # Exclui a rota padrão de arquivos estáticos e HEAD/OPTIONS
+            if rule.endpoint != "static":
+                routes.append({
+                    "path": str(rule),
+                    "methods": sorted([m for m in rule.methods if m not in ("HEAD", "OPTIONS")]),
+                    "endpoint": rule.endpoint,
+                })
         return jsonify({"count": len(routes), "routes": routes})
+
 
     # Favicon básico (evita 404 do navegador). Coloque um favicon em ./static se quiser.
     @app.get("/favicon.ico")
