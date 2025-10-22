@@ -11,16 +11,22 @@ from werkzeug.exceptions import HTTPException
 # DB (SQLAlchemy inicializado em models.py)
 # -----------------------------------------------------------------------------
 from models import db  # onde você definiu: db = SQLAlchemy()
-from flask_migrate import Migrate
+
+# -----------------------------------------------------------------------------
+# Migrate — protegido para evitar crash se faltar o pacote no deploy
+# -----------------------------------------------------------------------------
+try:
+    from flask_migrate import Migrate
+    migrate = Migrate()
+except ModuleNotFoundError:
+    Migrate = None
+    migrate = None
 
 # CORS (opcional)
 try:
     from flask_cors import CORS
 except Exception:
     CORS = None
-
-# Migrate em modo "factory": instancia global e inicializa no create_app()
-migrate = Migrate()
 
 
 def _normalize_database_url(url: str) -> str:
@@ -111,15 +117,13 @@ def create_app() -> Flask:
         # Debug controlado por env (NÃO use 1 em produção)
         DEBUG=os.getenv("FLASK_DEBUG", "0") == "1",
 
-        # =========================================================================
         # BRANDING via ENV (cores e logo)
-        # =========================================================================
-        BRAND_PRIMARY=os.getenv("BRAND_PRIMARY", "#7a1315"),  # vermelho institucional
-        BRAND_ACCENT=os.getenv("BRAND_ACCENT",  "#d1a34a"),   # dourado leve
-        BRAND_BG=os.getenv("BRAND_BG",          "#231f20"),   # fundo escuro
-        BRAND_CARD=os.getenv("BRAND_CARD",      "#2e2b2c"),   # cards
-        BRAND_LINE=os.getenv("BRAND_LINE",      "#3a3536"),   # bordas
-        LOGO_URL=os.getenv("LOGO_URL",          ""),          # opcional (Railway ENV)
+        BRAND_PRIMARY=os.getenv("BRAND_PRIMARY", "#7a1315"),
+        BRAND_ACCENT=os.getenv("BRAND_ACCENT",  "#d1a34a"),
+        BRAND_BG=os.getenv("BRAND_BG",          "#231f20"),
+        BRAND_CARD=os.getenv("BRAND_CARD",      "#2e2b2c"),
+        BRAND_LINE=os.getenv("BRAND_LINE",      "#3a3536"),
+        LOGO_URL=os.getenv("LOGO_URL",          ""),
 
         # CORS (defina CORS_ORIGINS no Railway para restringir)
         CORS_ORIGINS=os.getenv("CORS_ORIGINS", "*"),
@@ -129,7 +133,8 @@ def create_app() -> Flask:
     # Inicializa o Banco de Dados e Migrations
     # =========================================================================
     db.init_app(app)
-    migrate.init_app(app, db)
+    if migrate:
+        migrate.init_app(app, db)
 
     # =========================================================================
     # Hotfix: garantir coluna 'birth_date' em prod (idempotente)
@@ -160,12 +165,10 @@ def create_app() -> Flask:
     # =========================================================================
     @app.get("/health")
     def health():
-        """Retorna OK simples para verificação de vida"""
         return jsonify(status="ok"), 200
 
     @app.get("/ready")
     def ready():
-        """Verifica se o app está pronto (poderia testar o DB aqui)"""
         return jsonify(ready=True), 200
 
     # =========================================================================
@@ -173,10 +176,9 @@ def create_app() -> Flask:
     # =========================================================================
     @app.get("/debug/routes")
     def routes_map():
-        """Exibe todas as rotas da aplicação como JSON (útil para diagnóstico)"""
         routes = []
         for rule in app.url_map.iter_rules():
-            if rule.endpoint != "static":  # ignora arquivos estáticos
+            if rule.endpoint != "static":
                 routes.append({
                     "path": str(rule),
                     "methods": sorted([m for m in rule.methods if m not in ("HEAD", "OPTIONS")]),
@@ -184,7 +186,7 @@ def create_app() -> Flask:
                 })
         return jsonify({"count": len(routes), "routes": routes})
 
-    # Favicon básico (evita 404 do navegador). Coloque um favicon em ./static se quiser.
+    # Favicon básico (evita 404 do navegador)
     @app.get("/favicon.ico")
     def favicon():
         static_dir = os.path.join(app.root_path, "static")
@@ -197,34 +199,18 @@ def create_app() -> Flask:
     # =========================================================================
     @app.errorhandler(HTTPException)
     def handle_http_exc(e: HTTPException):
-        """Erros HTTP (404, 400, etc.)"""
-        return (
-            jsonify(
-                ok=False,
-                error={
-                    "code": e.code,
-                    "name": e.name,
-                    "message": e.description,
-                },
-            ),
-            e.code,
-        )
+        return jsonify(
+            ok=False,
+            error={"code": e.code, "name": e.name, "message": e.description},
+        ), e.code
 
     @app.errorhandler(Exception)
     def handle_generic_exc(e: Exception):
-        """Erro genérico (500). Evita vazar stacktrace (mas loga no console)."""
         app.logger.exception(e)  # loga stacktrace
-        return (
-            jsonify(
-                ok=False,
-                error={
-                    "code": 500,
-                    "name": "Internal Server Error",
-                    "message": "Ocorreu um erro inesperado.",
-                },
-            ),
-            500,
-        )
+        return jsonify(
+            ok=False,
+            error={"code": 500, "name": "Internal Server Error", "message": "Ocorreu um erro inesperado."},
+        ), 500
 
     return app
 
