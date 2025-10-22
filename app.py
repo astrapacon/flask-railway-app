@@ -50,6 +50,22 @@ def _ensure_ssl_if_public(url: str) -> str:
     q.setdefault("sslmode", "require")
     return urlunparse((u.scheme, u.netloc, u.path, u.params, urlencode(q), u.fragment))
 
+def _force_psycopg3_if_available(url: str) -> str:
+    """
+    Se psycopg3 estiver instalado, força o driver 'postgresql+psycopg://'.
+    (Mantém compatível se você estiver usando psycopg2-binary.)
+    """
+    if not url:
+        return url
+    try:
+        import psycopg  # psycopg3
+        if url.startswith("postgresql://"):
+            return url.replace("postgresql://", "postgresql+psycopg://", 1)
+    except Exception:
+        # psycopg3 não instalado → deixa como está (psycopg2 / default)
+        pass
+    return url
+
 def _mask_url(url: str) -> str:
     """Remove credenciais da URL p/ logs/diagnósticos."""
     if not url:
@@ -59,10 +75,14 @@ def _mask_url(url: str) -> str:
     return urlunparse((u.scheme, netloc, u.path, u.params, u.query, u.fragment))
 
 def _pick_database_url() -> str:
-    """Escolhe DATABASE_URL (privada) e cai para DATABASE_PUBLIC_URL se necessário."""
+    """
+    Escolhe DATABASE_URL (privada) e cai para DATABASE_PUBLIC_URL se necessário.
+    Normaliza esquema, força ssl em host público e usa psycopg3 se disponível.
+    """
     raw = os.getenv("DATABASE_URL") or os.getenv("DATABASE_PUBLIC_URL") or ""
     raw = _normalize_scheme(raw)
     raw = _ensure_ssl_if_public(raw)
+    raw = _force_psycopg3_if_available(raw)
     return raw
 
 
@@ -98,14 +118,22 @@ def create_app() -> Flask:
     app = Flask(__name__)
 
     # ============================ Config base ================================
+    db_uri = _pick_database_url() or "sqlite:///local.db"
+
     app.config.update(
         SECRET_KEY=os.getenv("SECRET_KEY", "dev-secret-change-me"),
         TOKEN_TTL_SECONDS=int(os.getenv("TOKEN_TTL_SECONDS", "3600")),
         MATRICULA_PREFIX=os.getenv("MATRICULA_PREFIX", "MR"),
         MATRICULA_DIGITS=int(os.getenv("MATRICULA_DIGITS", "5")),
         MATRICULA_SALT=os.getenv("MATRICULA_SALT", "salt-fixo-para-matricula"),
-        SQLALCHEMY_DATABASE_URI=_pick_database_url() or "sqlite:///local.db",
+
+        SQLALCHEMY_DATABASE_URI=db_uri,
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        # evita conexões "mortas" em ambientes serverless/railway
+        SQLALCHEMY_ENGINE_OPTIONS={
+            "pool_pre_ping": True,
+        },
+
         JSON_SORT_KEYS=False,
         DEBUG=os.getenv("FLASK_DEBUG", "0") == "1",
         BRAND_PRIMARY=os.getenv("BRAND_PRIMARY", "#7a1315"),
@@ -116,6 +144,9 @@ def create_app() -> Flask:
         LOGO_URL=os.getenv("LOGO_URL",          ""),
         CORS_ORIGINS=os.getenv("CORS_ORIGINS", "*"),
     )
+
+    # log de diagnóstico (sem credenciais)
+    app.logger.info(f"DB URI efetiva (mascarada): { _mask_url(app.config['SQLALCHEMY_DATABASE_URI']) }")
 
     # ============================ Filtros Jinja (fuso) =======================
     def _to_brt(dt):
