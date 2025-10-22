@@ -1,6 +1,6 @@
 flask
 flask_sqlalchemy
 flask_migrate
-psycopg2-binary
+psycopg[binary]==3.2.1
 pandas==2.2.3
 gunicorn==23.0.0
