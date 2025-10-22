@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Check-in{% endblock %}
+
+{% block content %}
+<form id="checkinForm" action="{{ url_for('checkin.checkin_submit', event=event_date) }}" method="post" class="checkin-form" novalidate>
+  <h2 class="title">Check-in de Formação</h2>
+
+  <div class="field">
+    <label for="cpf">CPF</label>
+    <input type="text" id="cpf" name="cpf" maxlength="14" placeholder="000.000.000-00" required>
+  </div>
+
+  <div class="field">
+    <label for="birth_date">Data de Nascimento</label>
+    <input type="text" id="birth_date" name="birth_date" placeholder="DD/MM/AAAA" required>
+  </div>
+
+  <div class="action">
+    <!-- Botão com morph + bolha do check  -->
+    <button type="button" id="confirmBtn" class="confirm-btn" aria-live="polite" aria-busy="false">
+      <!-- Label -->
+      <span class="confirm-text">REALIZAR CHECK-IN</span>
+
+      <!-- Check bubble (escala 0 → 1 quando .checked) -->
+      <span class="confirm-check" aria-hidden="true">
+        <svg viewBox="0 0 24 24" class="check-icon" role="presentation" aria-hidden="true">
+          <path d="M20 6L9 17l-5-5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+    </button>
+  </div>
+</form>
+
+<style>
+  .checkin-form{width:100%;max-width:460px;margin:0 auto;text-align:center}
+  .title{font-size:1.6rem;margin-bottom:1.2rem}
+  .field{display:flex;flex-direction:column;gap:.4rem;margin-bottom:1rem;text-align:left}
+  .field input{padding:.65rem .8rem;border:1px solid var(--line,#ddd);border-radius:10px;font-size:1rem}
+  .action{margin-top:1.2rem}
+
+  /* ========================= Botão base (gradiente bordô) ========================= */
+  .confirm-btn{
+    position:relative;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    overflow:hidden;
+
+    width:100%;
+    padding:.95rem 1.25rem;
+    border:0;
+    border-radius:12px;
+    cursor:pointer;
+
+    color:#fff;
+    font-weight:800;
+    letter-spacing:.3px;
+    text-transform:uppercase;
+
+    background: linear-gradient(180deg,#E30613 0%,#B0000B 100%);
+    box-shadow:0 4px 15px rgba(176,0,11,.20);
+    transition: all .5s ease-in-out;
+  }
+
+  .confirm-btn:hover{opacity:.9}
+  .confirm-text{transition:opacity .25s ease}
+
+  /* ========================= Bolha do check ========================= */
+  .confirm-check{
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%) scale(0); /* perfeitamente centralizado */
+    display:flex;
+    align-items:center;
+    justify-content:center;
+
+    width:30px;
+    height:30px;
+    border-radius:50%;
+
+    background:#fff;
+    color:#B0000B; /* vermelho do gradiente */
+    line-height:1;
+    box-shadow:0 4px 15px rgba(176,0,11,.40);
+
+    transition: transform .35s ease;
+  }
+
+  .check-icon{
+    width:18px;
+    height:18px;
+    display:block;
+  }
+
+  /* ========================= Estado checked (morph) ========================= */
+  .confirm-btn.checked{
+    width:56px;
+    height:56px;
+    border-radius:50%;
+    padding:0;
+    background: linear-gradient(180deg,#E30613 0%,#B0000B 100%);
+    box-shadow:0 4px 15px rgba(176,0,11,.40);
+    justify-content:center;
+    align-items:center;
+  }
+
+  .confirm-btn.checked .confirm-text{opacity:0}
+  .confirm-btn.checked .confirm-check{
+    transform:translate(-50%,-50%) scale(1);
+  }
+</style>
+
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const form = document.getElementById("checkinForm");
+    const btn  = document.getElementById("confirmBtn");
+
+    // garante reset (voltar da página ou editar campo)
+    function reset(){
+      btn.classList.remove("checked");
+      btn.disabled = false;
+      btn.setAttribute("aria-busy","false");
+    }
+    reset();
+    window.addEventListener("pageshow", reset);
+    form.addEventListener("input", reset);
+
+    const valid = () => form.reportValidity ? form.reportValidity() : true;
+
+    btn.addEventListener("click", () => {
+      if (!valid()) return;
+
+      btn.classList.add("checked");
+      btn.disabled = true;
+      btn.setAttribute("aria-busy","true");
+
+      // espera a animação terminar (~350ms)
+      setTimeout(() => form.submit(), 400);
+    });
+  });
+</script>
+{% endblock %}

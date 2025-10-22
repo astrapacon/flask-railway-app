@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Check-in confirmado{% endblock %}
+
+{% block head_extra %}
+<style>
+  .pill{display:inline-block;padding:6px 10px;border:1px solid var(--line);border-radius:999px;font-weight:700;opacity:.9}
+  .muted{color:#666}
+  .mt{margin-top:16px}
+  .btn{display:inline-block;margin-top:18px;padding:12px 16px;background:var(--ok);color:#fff;border-radius:12px;text-decoration:none;font-weight:800}
+  .btn:hover{background:var(--ok-hover)}
+</style>
+{% endblock %}
+
+{% block content %}
+  <div class="pill">✅ Check-in confirmado</div>
+  <h1>Presença registrada com sucesso</h1>
+  <p class="muted">Evento do dia {{ event_date.strftime("%d/%m/%Y") }}.</p>
+
+  <div class="mt" style="text-align:center">
+    <h3>🎉 Obrigado por participar!</h3>
+    <p class="muted">Deseja registrar outro candidato?</p>
+    <a class="btn mt" href="{{ url_for('checkin.checkin_page', event=event_date.isoformat()) }}">Novo check-in</a>
+  </div>
+{% endblock %}

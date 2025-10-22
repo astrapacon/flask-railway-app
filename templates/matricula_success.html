@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Presença confirmada{% endblock %}
+{% block title %}Matrícula confirmada{% endblock %}
 
 {% block head_extra %}
 <style>
@@ -23,8 +23,8 @@
 {% endblock %}
 
 {% block content %}
-  <div class="pill">✅ Presença confirmada</div>
-  <h1>Presença confirmada, aproveite o evento</h1>
+  <div class="pill">✅ Matrícula confirmada</div>
+  <h1>Matrícula registrada com sucesso</h1>
   <p class="muted">Registro feito para a matrícula <span class="mono">{{ code }}</span>.</p>
 
   <div class="env-stage">
@@ -38,10 +38,11 @@
   </div>
 
   <div class="mt" style="text-align:center">
-    <h3>🎉 Multiplicador, sua presença foi confirmada!</h3>
-    <p class="muted">Aproveite nosso evento! ✨ Multiplicadores que brilham, inspiram!<br/>
-    Com carinho, Programa de Multiplicadores.</p>
-    <a class="btn mt" href="{{ url_for('presenca.presenca_page') }}">Registrar outra presença</a>
+    <h3>🎉 Tudo certo com sua matrícula!</h3>
+    <p class="muted">Obrigado por confirmar. Se precisar, você pode consultar outra matrícula agora.</p>
+
+    {# Troque 'matricula.matricula_page' se o nome da sua rota de consulta for outro, ex: 'matricula.consulta_page' #}
+    <a class="btn mt" href="{{ url_for('matricula.matricula_page') }}">Consultar outra matrícula</a>
   </div>
 {% endblock %}
 

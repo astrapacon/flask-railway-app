@@ -1,7 +1,7 @@
 # models.py
 import datetime as dt
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import MetaData, text
+from sqlalchemy import MetaData, text, UniqueConstraint
 
 # ---------------------------------------------------------------------------
 # Convenção de nomes para constraints/índices (evita "Constraint must have a name")
@@ -25,16 +25,15 @@ class Matricula(db.Model):
     code = db.Column(db.String(16), unique=True, nullable=False, index=True)   # Ex: MR25684
     holder_name = db.Column(db.String(120), nullable=True)
 
-    # Armazene CPF só com dígitos (11). Se você já tem dados com pontuação, normalize na aplicação.
+    # CPF armazenado só com dígitos (11)
     cpf = db.Column(db.String(11), unique=True, nullable=False, index=True)
 
-    # Mantemos como String(10) (YYYY-MM-DD) para ser compatível com a coluna TEXT criada no SQLite/PG
-    # (Se quiser trocar para db.Date no futuro, faça uma migration específica.)
+    # Data de nascimento como string (YYYY-MM-DD)
     birth_date = db.Column(db.String(10), nullable=True)
 
     status = db.Column(db.String(20), nullable=False, server_default=text("'active'"))  # active|revoked|expired
 
-    # Timestamp criado no servidor (portável entre SQLite e Postgres)
+    # Timestamps
     created_at = db.Column(db.DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
 
     # Relação reversa: uma matrícula pode ter várias presenças
@@ -58,7 +57,7 @@ class Presenca(db.Model):
     )
 
     # Uma presença por dia
-    date_key = db.Column(db.String(10), nullable=False, index=True)  # Use 'YYYY-MM-DD' para consistência
+    date_key = db.Column(db.String(10), nullable=False, index=True)  # 'YYYY-MM-DD'
 
     timestamp = db.Column(db.DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
     ip = db.Column(db.String(64))
@@ -75,3 +74,26 @@ class Presenca(db.Model):
 
     def __repr__(self):
         return f"<Presenca {self.matricula_id} {self.date_key}>"
+
+
+class EventCheckin(db.Model):
+    __tablename__ = "event_checkins"
+
+    id = db.Column(db.Integer, primary_key=True)
+    event_date = db.Column(db.Date, nullable=False, index=True)
+
+    # CPF normalizado: somente 11 dígitos
+    cpf = db.Column(db.String(11), nullable=False, index=True)
+
+    # Guardamos a data de nascimento como string 'YYYY-MM-DD' (compatível com seu padrão)
+    birth_date = db.Column(db.String(10), nullable=False)
+
+    created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("event_date", "cpf", name="uq_event_date_cpf"),
+    )
+
+    def __repr__(self):
+        return f"<EventCheckin {self.event_date} {self.cpf} {self.birth_date}>"

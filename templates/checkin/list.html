@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Lista de Check-ins{% endblock %}
+
+{% block content %}
+<div class="checkin-list">
+  <h2>Lista de Check-ins</h2>
+  <p class="muted">Evento: <strong>{{ event_date.strftime('%d/%m/%Y') }}</strong></p>
+
+  {% if rows %}
+    <table class="checkin-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>CPF</th>
+          <th>Data de Nascimento</th>
+          <th>Registrado em</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ r.cpf }}</td>
+          <td>{{ r.birth_date or '-' }}</td>
+          <td>{{ r.created_at|fmt_brt('%d/%m/%Y %H:%M') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">Nenhum check-in registrado para esta data.</p>
+  {% endif %}
+
+  <div class="actions">
+    <a class="btn" href="{{ url_for('checkin.checkin_page', event=event_date.isoformat()) }}">
+      + Novo Check-in
+    </a>
+    <a class="btn-outline" href="{{ url_for('checkin.checkin_csv', event=event_date.isoformat()) }}">
+      ⬇ Exportar CSV
+    </a>
+  </div>
+</div>
+
+<style>
+  .checkin-list {
+    text-align: center;
+    width: 100%;
+  }
+
+  .checkin-list h2 {
+    font-size: 1.6rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .checkin-list .muted {
+    color: #666;
+    margin-bottom: 1rem;
+  }
+
+  table.checkin-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+    border-radius: 12px;
+    overflow: hidden;
+    font-size: 0.95rem;
+    background: var(--card, #fff);
+  }
+
+  table.checkin-table thead {
+    background: var(--ok, #7a1315);
+    color: white;
+  }
+
+  table.checkin-table th,
+  table.checkin-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line, #ddd);
+  }
+
+  table.checkin-table tr:hover {
+    background: #f8f8f8;
+  }
+
+  .actions {
+    margin-top: 1.5rem;
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+  }
+
+  .btn, .btn-outline {
+    display: inline-block;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s ease;
+  }
+
+  .btn {
+    background: var(--ok, #7a1315);
+    color: white;
+  }
+
+  .btn:hover {
+    background: var(--ok-hover, #6a1012);
+  }
+
+  .btn-outline {
+    border: 1px solid var(--ok, #7a1315);
+    color: var(--ok, #7a1315);
+    background: transparent;
+  }
+
+  .btn-outline:hover {
+    background: var(--ok, #7a1315);
+    color: white;
+  }
+</style>
+{% endblock %}
