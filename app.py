@@ -10,6 +10,9 @@ from zoneinfo import ZoneInfo
 
 from flask import Flask, jsonify, send_from_directory
 from werkzeug.exceptions import HTTPException
+# app.py (após criar db)
+from models import Matricula, Presenca  # e outros models
+
 
 # DB (SQLAlchemy inicializado em models.py)
 from models import db  # em models.py: db = SQLAlchemy()

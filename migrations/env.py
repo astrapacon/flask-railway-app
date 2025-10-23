@@ -1,3 +1,7 @@
+
+from app import db  # importa sua extensão já configurada
+target_metadata = db.metadata
+
 import logging
 from logging.config import fileConfig
 
