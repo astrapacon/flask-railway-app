@@ -25,11 +25,9 @@ class Matricula(db.Model):
     code = db.Column(db.String(16), unique=True, nullable=False, index=True)   # Ex: MR25684
     holder_name = db.Column(db.String(120), nullable=True)
 
-    # CPF armazenado só com dígitos (11)
-    cpf = db.Column(db.String(11), unique=True, nullable=False, index=True)
-
-    # Data de nascimento como string (YYYY-MM-DD)
-    birth_date = db.Column(db.String(10), nullable=True)
+    cpf = db.Column(db.String(11), unique=False, index=True)  # considere unique=True
+    
+    birth_date = db.Column(db.Date)
 
     status = db.Column(db.String(20), nullable=False, server_default=text("'active'"))  # active|revoked|expired
 

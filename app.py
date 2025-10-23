@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from flask import Flask, jsonify, send_from_directory
 from werkzeug.exceptions import HTTPException
 
-# DB (SQLAlchemy é inicializado em models.py)
+# DB (SQLAlchemy inicializado em models.py)
 from models import db  # em models.py: db = SQLAlchemy()
 
 # Migrate — protegido para evitar crash se faltar o pacote no deploy
@@ -38,6 +38,7 @@ def _normalize_scheme(url: str) -> str:
         return "postgresql://" + url[len("postgres://"):]
     return url
 
+
 def _ensure_ssl_if_public(url: str) -> str:
     """Se não for host interno da Railway, força sslmode=require."""
     if not url:
@@ -49,6 +50,7 @@ def _ensure_ssl_if_public(url: str) -> str:
     q = dict(parse_qsl(u.query))
     q.setdefault("sslmode", "require")
     return urlunparse((u.scheme, u.netloc, u.path, u.params, urlencode(q), u.fragment))
+
 
 def _force_psycopg3_if_available(url: str) -> str:
     """
@@ -62,9 +64,9 @@ def _force_psycopg3_if_available(url: str) -> str:
         if url.startswith("postgresql://"):
             return url.replace("postgresql://", "postgresql+psycopg://", 1)
     except Exception:
-        # psycopg3 não instalado → deixa como está (psycopg2 / default)
         pass
     return url
+
 
 def _mask_url(url: str) -> str:
     """Remove credenciais da URL p/ logs/diagnósticos."""
@@ -73,6 +75,7 @@ def _mask_url(url: str) -> str:
     u = urlparse(url)
     netloc = u.netloc.split("@", 1)[1] if "@" in u.netloc else u.netloc
     return urlunparse((u.scheme, netloc, u.path, u.params, u.query, u.fragment))
+
 
 def _pick_database_url() -> str:
     """
@@ -129,26 +132,23 @@ def create_app() -> Flask:
 
         SQLALCHEMY_DATABASE_URI=db_uri,
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
-        # evita conexões "mortas" em ambientes serverless/railway
-        SQLALCHEMY_ENGINE_OPTIONS={
-            "pool_pre_ping": True,
-        },
+        SQLALCHEMY_ENGINE_OPTIONS={"pool_pre_ping": True},
 
         JSON_SORT_KEYS=False,
         DEBUG=os.getenv("FLASK_DEBUG", "0") == "1",
         BRAND_PRIMARY=os.getenv("BRAND_PRIMARY", "#7a1315"),
-        BRAND_ACCENT=os.getenv("BRAND_ACCENT",  "#d1a34a"),
-        BRAND_BG=os.getenv("BRAND_BG",          "#231f20"),
-        BRAND_CARD=os.getenv("BRAND_CARD",      "#2e2b2c"),
-        BRAND_LINE=os.getenv("BRAND_LINE",      "#3a3536"),
-        LOGO_URL=os.getenv("LOGO_URL",          ""),
+        BRAND_ACCENT=os.getenv("BRAND_ACCENT", "#d1a34a"),
+        BRAND_BG=os.getenv("BRAND_BG", "#231f20"),
+        BRAND_CARD=os.getenv("BRAND_CARD", "#2e2b2c"),
+        BRAND_LINE=os.getenv("BRAND_LINE", "#3a3536"),
+        LOGO_URL=os.getenv("LOGO_URL", ""),
         CORS_ORIGINS=os.getenv("CORS_ORIGINS", "*"),
     )
 
-    # log de diagnóstico (sem credenciais)
+    # Log de diagnóstico (sem credenciais)
     app.logger.info(f"DB URI efetiva (mascarada): { _mask_url(app.config['SQLALCHEMY_DATABASE_URI']) }")
 
-    # ============================ Filtros Jinja (fuso) =======================
+    # ============================ Filtros Jinja (fuso horário) ===============
     def _to_brt(dt):
         """Converte datetime UTC (ou naive UTC) para America/Sao_Paulo."""
         if not dt:
@@ -187,7 +187,6 @@ def create_app() -> Flask:
         CORS(app, resources={r"/*": {"origins": app.config["CORS_ORIGINS"]}})
 
     # ============================ Blueprints ================================
-    # Evita quebrar o deploy se algum módulo não existir ainda
     def _safe_register(import_path: str, name: str, prefix: str):
         try:
             module = __import__(import_path, fromlist=[name])
@@ -214,6 +213,7 @@ def create_app() -> Flask:
 
     # ============================ DB Check ==================================
     from sqlalchemy import text as _sql_text
+
     @app.get("/dbcheck")
     def dbcheck():
         info = {
@@ -273,5 +273,7 @@ def create_app() -> Flask:
     return app
 
 
+# -----------------------------------------------------------------------------
 # Instância WSGI para o Gunicorn
+# -----------------------------------------------------------------------------
 app = create_app()
