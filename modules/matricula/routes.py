@@ -28,18 +28,25 @@ def _is_valid_cpf_digits(d: str) -> bool:
     d = _only_digits(d)
     return len(d) == 11 and d.isdigit()
 
-def _parse_birth_date(raw: str):
+def _parse_birth_date(s: str):
     """
-    Converte 'DD/MM/AAAA' para _dt.date. Retorna None se inválida.
+    Converte string para date.
+    Aceita 'YYYY-MM-DD' (ISO) ou 'DD/MM/YYYY'.
+    Retorna None se formato inválido.
     """
-    raw = (raw or "").strip()
-    if not raw or not DATE_RE.fullmatch(raw):
+    import datetime as _dt
+
+    if not s:
         return None
-    try:
-        d, m, y = [int(x) for x in raw.split("/")]
-        return _dt.date(y, m, d)
-    except Exception:
-        return None
+
+    s = s.strip()
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return _dt.datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
 
 def _code_from_cpf(cpf_digits: str) -> str:
     """Gera código determinístico a partir do CPF e do SALT."""
