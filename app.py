@@ -1,7 +1,5 @@
-# app.py
-# -----------------------------------------------------------------------------
-# Programa de Multiplicadores — Aplicação Flask principal
-# -----------------------------------------------------------------------------
+from dotenv import load_dotenv
+load_dotenv()
 
 import os
 from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
@@ -10,82 +8,81 @@ from zoneinfo import ZoneInfo
 
 from flask import Flask, jsonify, send_from_directory
 from werkzeug.exceptions import HTTPException
-# app.py (após criar db)
-from models import Matricula, Presenca  # e outros models
 
+# Models / DB (o SQLAlchemy e metadata estão definidos em models.py)
+from models import db  # em models.py: db = SQLAlchemy(metadata=metadata)
 
-# DB (SQLAlchemy inicializado em models.py)
-from models import db  # em models.py: db = SQLAlchemy()
-
-# Migrate — protegido para evitar crash se faltar o pacote no deploy
+# Opcional: Flask-Migrate (não quebra se faltar no deploy)
 try:
     from flask_migrate import Migrate
     migrate = Migrate()
 except ModuleNotFoundError:
-    Migrate = None
     migrate = None
 
-# CORS (opcional)
+# Opcional: CORS
 try:
     from flask_cors import CORS
 except Exception:
     CORS = None
 
-
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # lê .env automaticamente
+except Exception:
+    pass
 # -----------------------------------------------------------------------------
 # Helpers de conexão com o banco
 # -----------------------------------------------------------------------------
 def _normalize_scheme(url: str) -> str:
-    """SQLAlchemy quer 'postgresql://' (não 'postgres://')."""
+    """Converte 'postgres://' (heroku-style) para 'postgresql://'."""
     if url and url.startswith("postgres://"):
         return "postgresql://" + url[len("postgres://"):]
     return url
 
-
 def _ensure_ssl_if_public(url: str) -> str:
-    """Se não for host interno da Railway, força sslmode=require."""
+    """Para hosts públicos, garante sslmode=require (Railway/Heroku)."""
     if not url:
         return url
     u = urlparse(url)
+    # se estiver em rede privada (ex.: *.railway.internal), não força SSL
     is_internal = u.hostname and u.hostname.endswith(".railway.internal")
     if is_internal:
-        return url  # private network → sem necessidade de sslmode
+        return url
     q = dict(parse_qsl(u.query))
     q.setdefault("sslmode", "require")
     return urlunparse((u.scheme, u.netloc, u.path, u.params, urlencode(q), u.fragment))
 
-
 def _force_psycopg3_if_available(url: str) -> str:
-    """
-    Se psycopg3 estiver instalado, força o driver 'postgresql+psycopg://'.
-    (Mantém compatível se você estiver usando psycopg2-binary.)
-    """
+    """Se psycopg3 estiver instalado, usa 'postgresql+psycopg://'."""
     if not url:
         return url
     try:
-        import psycopg  # psycopg3
+        import psycopg  # noqa: F401 (verifica se existe)
         if url.startswith("postgresql://"):
             return url.replace("postgresql://", "postgresql+psycopg://", 1)
     except Exception:
         pass
     return url
 
-
 def _mask_url(url: str) -> str:
-    """Remove credenciais da URL p/ logs/diagnósticos."""
+    """Remove credenciais da URL (para logs)."""
     if not url:
         return ""
     u = urlparse(url)
     netloc = u.netloc.split("@", 1)[1] if "@" in u.netloc else u.netloc
     return urlunparse((u.scheme, netloc, u.path, u.params, u.query, u.fragment))
 
-
 def _pick_database_url() -> str:
     """
-    Escolhe DATABASE_URL (privada) e cai para DATABASE_PUBLIC_URL se necessário.
-    Normaliza esquema, força ssl em host público e usa psycopg3 se disponível.
+    Escolhe a URL do banco exclusivamente de DATABASE_URL (ou DATABASE_PUBLIC_URL).
+    Sem fallback para SQLite — se não houver Postgres, lança erro.
     """
     raw = os.getenv("DATABASE_URL") or os.getenv("DATABASE_PUBLIC_URL") or ""
+    if not raw:
+        raise RuntimeError(
+            "DATABASE_URL não definida. Configure sua URL do Postgres "
+            "(ex.: postgresql://user:pass@host:5432/db?sslmode=require)."
+        )
     raw = _normalize_scheme(raw)
     raw = _ensure_ssl_if_public(raw)
     raw = _force_psycopg3_if_available(raw)
@@ -93,9 +90,13 @@ def _pick_database_url() -> str:
 
 
 # -----------------------------------------------------------------------------
-# Hotfix idempotente para garantir coluna birth_date na tabela 'matriculas'
+# Hotfix idempotente (ex.: garantir coluna em bases antigas — opcional)
 # -----------------------------------------------------------------------------
 def _ensure_birth_date_column(app: Flask):
+    """
+    Exemplo de hotfix seguro: garantir coluna 'birth_date' em 'matriculas'.
+    Em bases novas/migradas corretamente, não faz nada.
+    """
     from sqlalchemy import text
     with app.app_context():
         try:
@@ -106,57 +107,58 @@ def _ensure_birth_date_column(app: Flask):
                 if "birth_date" not in names:
                     db.session.execute(text("ALTER TABLE matriculas ADD COLUMN birth_date TEXT"))
                     db.session.commit()
-                    print("[INIT] (sqlite) Coluna birth_date criada em matriculas.")
-            elif engine_name == "postgresql":
+                    app.logger.info("[INIT] (sqlite) Coluna birth_date criada em matriculas.")
+            elif engine_name.startswith("postgres"):
                 db.session.execute(text(
                     "ALTER TABLE matriculas ADD COLUMN IF NOT EXISTS birth_date VARCHAR"
                 ))
                 db.session.commit()
-                print("[INIT] (postgresql) Garantida coluna birth_date em matriculas.")
+                app.logger.info("[INIT] (postgres) Garantida coluna birth_date em matriculas.")
         except Exception as e:
-            print(f"[INIT] Aviso ao garantir coluna birth_date: {e}")
+            app.logger.warning(f"[INIT] Aviso ao garantir coluna birth_date: {e}")
 
 
 # -----------------------------------------------------------------------------
-# Application Factory
+# Application Factory (recomendado)
 # -----------------------------------------------------------------------------
 def create_app() -> Flask:
     app = Flask(__name__)
 
     # ============================ Config base ================================
-    db_uri = _pick_database_url() or "sqlite:///local.db"
+    db_uri = _pick_database_url()  # ❗ sem fallback para SQLite
 
     app.config.update(
+        # Flask
         SECRET_KEY=os.getenv("SECRET_KEY", "dev-secret-change-me"),
-        TOKEN_TTL_SECONDS=int(os.getenv("TOKEN_TTL_SECONDS", "3600")),
-        MATRICULA_PREFIX=os.getenv("MATRICULA_PREFIX", "MR"),
-        MATRICULA_DIGITS=int(os.getenv("MATRICULA_DIGITS", "5")),
-        MATRICULA_SALT=os.getenv("MATRICULA_SALT", "salt-fixo-para-matricula"),
-
-        SQLALCHEMY_DATABASE_URI=db_uri,
-        SQLALCHEMY_TRACK_MODIFICATIONS=False,
-        SQLALCHEMY_ENGINE_OPTIONS={"pool_pre_ping": True},
-
-        JSON_SORT_KEYS=False,
         DEBUG=os.getenv("FLASK_DEBUG", "0") == "1",
+        JSON_SORT_KEYS=False,
+
+        # Branding (opcional)
         BRAND_PRIMARY=os.getenv("BRAND_PRIMARY", "#7a1315"),
         BRAND_ACCENT=os.getenv("BRAND_ACCENT", "#d1a34a"),
         BRAND_BG=os.getenv("BRAND_BG", "#231f20"),
         BRAND_CARD=os.getenv("BRAND_CARD", "#2e2b2c"),
         BRAND_LINE=os.getenv("BRAND_LINE", "#3a3536"),
         LOGO_URL=os.getenv("LOGO_URL", ""),
+
+        # DB
+        SQLALCHEMY_DATABASE_URI=db_uri,
+        SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        SQLALCHEMY_ENGINE_OPTIONS={"pool_pre_ping": True},
+
+        # CORS (domínios permitidos; ajuste para seu front)
         CORS_ORIGINS=os.getenv("CORS_ORIGINS", "*"),
     )
 
     # Log de diagnóstico (sem credenciais)
     app.logger.info(f"DB URI efetiva (mascarada): { _mask_url(app.config['SQLALCHEMY_DATABASE_URI']) }")
 
-    # ============================ Filtros Jinja (fuso horário) ===============
+    # ============================ Filtros Jinja (fuso) =======================
     def _to_brt(dt):
         """Converte datetime UTC (ou naive UTC) para America/Sao_Paulo."""
         if not dt:
             return None
-        if dt.tzinfo is None:
+        if getattr(dt, "tzinfo", None) is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt.astimezone(ZoneInfo("America/Sao_Paulo"))
 
@@ -172,7 +174,7 @@ def create_app() -> Flask:
     if migrate:
         migrate.init_app(app, db)
 
-    # ============================ Hotfix birth_date ==========================
+    # ============================ Hotfix opcional ============================
     from sqlalchemy import inspect
     with app.app_context():
         try:
@@ -181,29 +183,34 @@ def create_app() -> Flask:
                 _ensure_birth_date_column(app)
                 app.logger.info("Tabela 'matriculas' encontrada; coluna 'birth_date' verificada.")
             else:
-                app.logger.warning("Tabela 'matriculas' ainda não existe; pulando ensure_birth_date_column.")
+                app.logger.info("Tabela 'matriculas' ainda não existe; pulando ensure_birth_date_column.")
         except Exception as e:
-            app.logger.error(f"Erro ao verificar tabela 'matriculas': {e}")
+            app.logger.warning(f"Erro ao verificar tabela 'matriculas': {e}")
 
     # ============================ CORS (opcional) ============================
     if CORS:
         CORS(app, resources={r"/*": {"origins": app.config["CORS_ORIGINS"]}})
 
     # ============================ Blueprints ================================
-    def _safe_register(import_path: str, name: str, prefix: str):
+    def _safe_register(import_path: str, name: str):
+        """
+        Importa e registra um blueprint que já define seu próprio url_prefix.
+        Evita crash na inicialização em produção.
+        """
         try:
             module = __import__(import_path, fromlist=[name])
             bp = getattr(module, name)
-            app.register_blueprint(bp, url_prefix=prefix)
-            app.logger.info(f"Blueprint {import_path}.{name} registrado em {prefix}")
+            app.register_blueprint(bp)  # blueprint deve ter url_prefix internamente
+            app.logger.info(f"Blueprint {import_path}.{name} registrado.")
         except Exception as e:
             app.logger.warning(f"Não foi possível registrar {import_path}.{name}: {e}")
 
-    _safe_register("modules.auth.routes", "auth_bp", "/auth")
-    _safe_register("modules.matricula.routes", "matricula_bp", "/matricula")
-    _safe_register("modules.workato.routes", "workato_bp", "/workato")
-    _safe_register("modules.presenca.routes", "presenca_bp", "/presenca")
-    _safe_register("modules.checkin.routes", "checkin_bp", "/checkin")
+    # Registre aqui seus módulos
+    _safe_register("modules.auth.routes", "auth_bp")
+    _safe_register("modules.matricula.routes", "matricula_bp")
+    _safe_register("modules.workato.routes", "workato_bp")
+    _safe_register("modules.presenca.routes", "presenca_bp")
+    _safe_register("modules.checkin.routes", "checkin_bp")
 
     # ============================ Healthchecks ===============================
     @app.get("/health")
@@ -234,7 +241,7 @@ def create_app() -> Flask:
             info["ok"] = True
         except Exception as e:
             info["error"] = str(e)
-        return jsonify(info)
+        return jsonify(info), (200 if info["ok"] else 500)
 
     # ============================ Debug: mapa de rotas =======================
     @app.get("/debug/routes")
@@ -247,7 +254,7 @@ def create_app() -> Flask:
                     "methods": sorted([m for m in rule.methods if m not in ("HEAD", "OPTIONS")]),
                     "endpoint": rule.endpoint,
                 })
-        return jsonify({"count": len(routes), "routes": routes})
+        return jsonify({"count": len(routes), "routes": routes}), 200
 
     # ============================ Favicon ===================================
     @app.get("/favicon.ico")
@@ -274,9 +281,3 @@ def create_app() -> Flask:
         ), 500
 
     return app
-
-
-# -----------------------------------------------------------------------------
-# Instância WSGI para o Gunicorn
-# -----------------------------------------------------------------------------
-app = create_app()

@@ -3,15 +3,22 @@ import csv
 import io
 import re
 import datetime as _dt
-from sqlalchemy.exc import IntegrityError
-from flask import (
-    Blueprint, request, render_template, redirect, url_for, flash, Response
-)
-from models import db, EventCheckin, Matricula  # Matricula é opcional para checagem
 from zoneinfo import ZoneInfo
 
-# Importante: sem url_prefix aqui; ele é definido no app.register_blueprint(..., url_prefix="/checkin")
-checkin_bp = Blueprint("checkin", __name__)
+from flask import (
+    Blueprint, request, render_template, redirect, url_for, flash, Response, jsonify
+)
+from sqlalchemy import desc
+from sqlalchemy.exc import IntegrityError
+
+# Use UMA única origem de modelos. Primeiro tenta 'models', se falhar usa 'yourapp.models'.
+try:
+    from models import db, EventCheckin, Matricula
+except ImportError:
+    from yourapp.models import db, EventCheckin, Matricula
+
+# Defina o blueprint UMA vez só, com prefixo
+checkin_bp = Blueprint("checkin", __name__, url_prefix="/checkin")
 
 _ONLY_DIGITS = re.compile(r"\D+")
 
@@ -143,29 +150,105 @@ def checkin_list():
 
 
 @checkin_bp.get("/csv")
+@checkin_bp.get("/csv")
 def checkin_csv():
-    ...
-    tz = ZoneInfo("America/Sao_Paulo")
+    """
+    Exporta CSV dos check-ins de uma data (ou hoje se não informado).
+    """
+    # 1) defina event_date primeiro
+    event_date = _parse_event_date()
+
+    # 2) carregue as linhas do banco
+    rows = (
+        EventCheckin.query
+        .filter_by(event_date=event_date)
+        .order_by(EventCheckin.created_at.asc())
+        .all()
+    )
+
+    # 3) crie o buffer e o writer ANTES de usar
+    buf = io.StringIO()
+    w = csv.writer(buf)
+
+    # 4) cabeçalho
     w.writerow(["event_date", "cpf", "birth_date", "created_at_brt", "updated_at_brt"])
+
+    # 5) escreva as linhas (normalizando timezone)
+    tz = ZoneInfo("America/Sao_Paulo")
     for r in rows:
         ca = r.created_at
         ua = r.updated_at
-        if ca and ca.tzinfo is None:  # assumimos UTC
+        # assume UTC se datetime vier "naive"
+        if ca and ca.tzinfo is None:
             ca = ca.replace(tzinfo=_dt.timezone.utc)
         if ua and ua.tzinfo is None:
             ua = ua.replace(tzinfo=_dt.timezone.utc)
 
         w.writerow([
-            r.event_date.isoformat(),
+            r.event_date.isoformat() if r.event_date else "",
             r.cpf,
-            r.birth_date,
+            r.birth_date or "",
             ca.astimezone(tz).strftime("%Y-%m-%d %H:%M:%S") if ca else "",
             ua.astimezone(tz).strftime("%Y-%m-%d %H:%M:%S") if ua else "",
         ])
 
+    # 6) finalize e retorne
     out = buf.getvalue().encode("utf-8")
     return Response(
         out,
         mimetype="text/csv; charset=utf-8",
         headers={"Content-Disposition": f"attachment; filename=checkins_{event_date.isoformat()}.csv"}
     )
+@checkin_bp.get("/api")
+def checkin_api_get():
+    """
+    Retorna check-ins.
+    Query params:
+      - cpf=10688046967 (opcional; obrigatório se não autenticado)
+      - page=1 (opcional)
+      - per_page=50 (opcional; máx 100 recomendado)
+      - from=YYYY-MM-DD (opcional)
+      - to=YYYY-MM-DD (opcional)
+    """
+    cpf = (request.args.get("cpf") or "").strip()
+    page = max(int(request.args.get("page", 1) or 1), 1)
+    per_page = min(max(int(request.args.get("per_page", 50) or 50), 1), 100)
+
+    user = None  # troque por sua verificação de Bearer/JWT
+
+    if not user and not cpf:
+        return jsonify(ok=False, error="cpf_required"), 400
+
+    q = EventCheckin.query
+    if cpf:
+        q = q.filter(EventCheckin.cpf == cpf)
+
+    _from = request.args.get("from")
+    _to = request.args.get("to")
+
+    from datetime import datetime
+    if _from:
+        q = q.filter(EventCheckin.created_at >= datetime.fromisoformat(_from))
+    if _to:
+        q = q.filter(EventCheckin.created_at <= datetime.fromisoformat(_to))
+
+    q = q.order_by(desc(EventCheckin.created_at))
+
+    items = q.paginate(page=page, per_page=per_page, error_out=False)
+    data = [{
+        "id": c.id,
+        "cpf": c.cpf,
+        "birth_date": c.birth_date,
+        "event_date": c.event_date.isoformat() if c.event_date else None,
+        "created_at": c.created_at.isoformat() if c.created_at else None,
+        "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+    } for c in items.items]
+
+    return jsonify(
+        ok=True,
+        total=items.total,
+        page=items.page,
+        pages=items.pages,
+        per_page=items.per_page,
+        checkins=data
+    ), 200

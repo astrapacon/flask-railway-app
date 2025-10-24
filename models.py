@@ -1,97 +1,76 @@
 # models.py
 import datetime as dt
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import MetaData, text, UniqueConstraint
+from sqlalchemy import MetaData, Index
+from sqlalchemy.sql import func
+from werkzeug.security import generate_password_hash, check_password_hash
 
-# ---------------------------------------------------------------------------
-# Convenção de nomes para constraints/índices (evita "Constraint must have a name")
-# ---------------------------------------------------------------------------
-convention = {
-    "ix": "ix_%(table_name)s_%(column_0_label)s",
+# 1) Convenção de nomes (alegórica e previsível p/ Alembic)
+NAMING_CONVENTION = {
+    "ix": "ix_%(table_name)s_%(column_0_name)s",
     "uq": "uq_%(table_name)s_%(column_0_name)s",
     "ck": "ck_%(table_name)s_%(constraint_name)s",
     "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
     "pk": "pk_%(table_name)s",
 }
-metadata = MetaData(naming_convention=convention)
 
+# 2) Metadata único com naming convention
+metadata = MetaData(naming_convention=NAMING_CONVENTION)
+
+# 3) SQLAlchemy usando esse metadata
 db = SQLAlchemy(metadata=metadata)
 
-# ============================ MATRÍCULAS ============================
+# ============== EXEMPLOS DE MODELOS (opcional) ==============
+
+class User(db.Model):
+    __tablename__ = "users"
+    id = db.Column(db.BigInteger, primary_key=True)
+    username = db.Column(db.String(80), nullable=False, unique=True)
+    password_hash = db.Column(db.String(255), nullable=False)
+    role = db.Column(db.String(20), nullable=False, default="admin")
+    created_at = db.Column(db.DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    def set_password(self, raw: str):
+        self.password_hash = generate_password_hash(raw)
+
+    def check_password(self, raw: str) -> bool:
+        return check_password_hash(self.password_hash, raw)
+
+# Unicidade case-insensitive (Postgres): índice único em lower(username)
+Index("uq_users_username_lower", db.func.lower(User.username), unique=True, postgresql_using="btree")
+
+# Exemplo de outros modelos (ajuste aos seus campos reais)
 class Matricula(db.Model):
     __tablename__ = "matriculas"
+    id = db.Column(db.BigInteger, primary_key=True)
+    code = db.Column(db.String(8), nullable=False, unique=True, index=True)  # ex.: MR41081
+    cpf = db.Column(db.String(11), nullable=False, index=True)
+    holder_name = db.Column(db.String(120))
+    birth_date = db.Column(db.String(10))  # "YYYY-MM-DD"
+    status = db.Column(db.String(20), default="active")
+    created_at = db.Column(db.DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    id = db.Column(db.Integer, primary_key=True)
-    code = db.Column(db.String(16), unique=True, nullable=False, index=True)   # Ex: MR25684
-    holder_name = db.Column(db.String(120), nullable=True)
-
-    cpf = db.Column(db.String(11), unique=False, index=True)  # considere unique=True
-    
-    birth_date = db.Column(db.Date)
-
-    status = db.Column(db.String(20), nullable=False, server_default=text("'active'"))  # active|revoked|expired
-
-    # Timestamps
-    created_at = db.Column(db.DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
-
-    # Relação reversa: uma matrícula pode ter várias presenças
-    presencas = db.relationship("Presenca", back_populates="matricula", lazy="dynamic")
-
-    def __repr__(self):
-        return f"<Matricula {self.code} ({self.status})>"
-
-
-# ============================ PRESENÇAS ============================
 class Presenca(db.Model):
     __tablename__ = "presencas"
-
-    id = db.Column(db.Integer, primary_key=True)
-
-    matricula_id = db.Column(
-        db.Integer,
-        db.ForeignKey("matriculas.id", name="fk_presencas_matricula_id_matriculas"),
-        nullable=False,
-        index=True,
-    )
-
-    # Uma presença por dia
-    date_key = db.Column(db.String(10), nullable=False, index=True)  # 'YYYY-MM-DD'
-
-    timestamp = db.Column(db.DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    id = db.Column(db.BigInteger, primary_key=True)
+    matricula_id = db.Column(db.BigInteger, db.ForeignKey("matriculas.id"), nullable=False, index=True)
+    date_key = db.Column(db.Date, nullable=False, index=True)  # 1x por dia
+    timestamp = db.Column(db.DateTime(timezone=True), server_default=func.now(), nullable=False)
     ip = db.Column(db.String(64))
     user_agent = db.Column(db.String(300))
-    source = db.Column(db.String(80))  # Ex: 'web', 'mobile', 'api'
-
-    # Evita duplicidade de presença diária
-    __table_args__ = (
-        db.UniqueConstraint("matricula_id", "date_key", name="uq_presenca_por_dia"),
-    )
-
-    # Relação reversa
-    matricula = db.relationship("Matricula", back_populates="presencas")
-
-    def __repr__(self):
-        return f"<Presenca {self.matricula_id} {self.date_key}>"
-
+    source = db.Column(db.String(20), default="web")
 
 class EventCheckin(db.Model):
     __tablename__ = "event_checkins"
-
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.BigInteger, primary_key=True)
     event_date = db.Column(db.Date, nullable=False, index=True)
-
-    # CPF normalizado: somente 11 dígitos
     cpf = db.Column(db.String(11), nullable=False, index=True)
-
-    # Guardamos a data de nascimento como string 'YYYY-MM-DD' (compatível com seu padrão)
-    birth_date = db.Column(db.String(10), nullable=False)
-
-    created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False)
-    updated_at = db.Column(db.DateTime, default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow, nullable=False)
+    birth_date = db.Column(db.String(10))
+    name = db.Column(db.String(120))  # se você incluiu o nome
+    created_at = db.Column(db.DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     __table_args__ = (
-        UniqueConstraint("event_date", "cpf", name="uq_event_date_cpf"),
+        db.UniqueConstraint("event_date", "cpf", name="uq_event_checkins_event_date_cpf"),
     )
-
-    def __repr__(self):
-        return f"<EventCheckin {self.event_date} {self.cpf} {self.birth_date}>"
